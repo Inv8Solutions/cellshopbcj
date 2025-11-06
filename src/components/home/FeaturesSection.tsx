@@ -19,13 +19,13 @@ export default function FeaturesSection() {
 
   return (
     <section className="bg-gray-50 py-16 lg:py-24">
-      <div className="max-w-full mx-auto px-6 lg:px-12">
+      <div className="w-full px-6 lg:px-12">
         {/* Section Header */}
         <div className="text-center mb-16">
           <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-gray-900 mb-6">
             Welcome to BJMP-CAR SHOP
           </h2>
-          <p className="text-base sm:text-lg text-gray-600 max-w-4xl mx-auto leading-relaxed">
+          <p className="text-base sm:text-lg text-gray-600 leading-relaxed">
             Discover a unique collection of products handcrafted with care by the BJMP-CAR. Shop responsibly and support a meaningful cause while getting beautiful, eco-friendly bags made from recycled materials.
           </p>
         </div>
