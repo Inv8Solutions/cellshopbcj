@@ -7,16 +7,19 @@ import { Search, Menu, X } from 'lucide-react';
 export default function Navbar() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
 
   const toggleMenu = () => setIsMenuOpen(!isMenuOpen);
+  const toggleSearch = () => setIsSearchOpen(!isSearchOpen);
 
   return (
     <nav className="fixed top-0 left-0 right-0 z-50 bg-white border-b border-gray-100">
       <div className="w-full px-6 lg:px-12">
         <div className="flex items-center justify-between h-16 gap-4">
-          {/* Search Bar - Left */}
+          {/* Search Bar - Desktop / Search Icon - Mobile */}
           <div className="flex items-center flex-1 max-w-xs">
-            <div className="relative w-full">
+            {/* Desktop Search Bar */}
+            <div className="hidden md:block relative w-full">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                 <Search className="h-4 w-4 text-gray-400" />
               </div>
@@ -28,6 +31,15 @@ export default function Navbar() {
                 className="block w-full pl-9 pr-3 py-2 bg-gray-50 border-0 rounded-lg text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-200 focus:bg-white transition-all"
               />
             </div>
+
+            {/* Mobile Search Icon */}
+            <button
+              onClick={toggleSearch}
+              className="md:hidden p-2 rounded-lg text-gray-700 hover:text-gray-900 hover:bg-gray-50 transition-colors"
+              aria-label="Search"
+            >
+              <Search className="h-5 w-5" />
+            </button>
           </div>
 
           {/* Logo - Center */}
@@ -72,6 +84,25 @@ export default function Navbar() {
           </div>
         </div>
       </div>
+
+      {/* Mobile Search Bar (Expandable) */}
+      {isSearchOpen && (
+        <div className="md:hidden bg-white border-t border-gray-100 px-6 py-3">
+          <div className="relative">
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+              <Search className="h-4 w-4 text-gray-400" />
+            </div>
+            <input
+              type="text"
+              placeholder="Search Anything..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="block w-full pl-9 pr-3 py-2 bg-gray-50 border-0 rounded-lg text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-200 focus:bg-white transition-all"
+              autoFocus
+            />
+          </div>
+        </div>
+      )}
 
       {/* Mobile menu */}
       {isMenuOpen && (
