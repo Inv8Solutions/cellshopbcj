@@ -2,6 +2,7 @@
 
 import Navbar from '@/components/layout/Navbar';
 import Footer from '@/components/layout/Footer';
+import ContactSection from '@/components/home/ContactSection';
 import { useState } from 'react';
 import { ShoppingBag, ChevronDown } from 'lucide-react';
 import Link from 'next/link';
@@ -189,6 +190,7 @@ export default function ProductsPage() {
           </div>
         </div>
       </main>
+        <ContactSection />
       <Footer />
     </div>
   );
