@@ -4,6 +4,7 @@ import FeaturesSection from '@/components/home/FeaturesSection';
 import ProductsPreviewSection from '@/components/home/ProductsPreviewSection';
 import ServicesSection from '@/components/home/ServicesSection';
 import CTASection from '@/components/home/CTASection';
+import ContactSection from '@/components/home/ContactSection';
 import Footer from '@/components/layout/Footer';
 
 export default function Home() {
@@ -16,7 +17,7 @@ export default function Home() {
         <ProductsPreviewSection />
         <ServicesSection />
         <CTASection />
-        {/* Additional sections will be added here */}
+        <ContactSection />
       </main>
       <Footer />
     </div>
