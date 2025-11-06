@@ -1,3 +1,5 @@
+'use client';
+
 import Link from 'next/link';
 import Image from 'next/image';
 import { Phone, Mail, MapPin, ArrowRight } from 'lucide-react';
@@ -85,15 +87,15 @@ export default function ContactSection() {
           />
 
           {/* Gradient Overlay */}
-          <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent"></div>
+          <div className="absolute inset-0 bg-linear-to-t from-black/20 to-transparent"></div>
 
           {/* Navigation Links */}
-          <div className="absolute top-6 right-6 flex items-center gap-3">
+          <div className="absolute top-4 sm:top-6 left-4 right-4 sm:left-auto sm:right-6 flex items-center gap-3 overflow-x-auto pb-2 sm:pb-0 scrollbar-hide">
             {navLinks.map((link) => (
               <Link
                 key={link.label}
                 href={link.href}
-                className="px-6 py-3 bg-white hover:bg-gray-50 rounded-full text-sm font-medium text-gray-900 transition-all duration-300 shadow-sm hover:shadow-md"
+                className="px-6 py-3 bg-white hover:bg-gray-50 rounded-full text-sm font-medium text-gray-900 transition-all duration-300 shadow-sm hover:shadow-md whitespace-nowrap shrink-0"
               >
                 {link.label}
               </Link>
@@ -101,6 +103,16 @@ export default function ContactSection() {
           </div>
         </div>
       </div>
+
+      <style jsx>{`
+        .scrollbar-hide::-webkit-scrollbar {
+          display: none;
+        }
+        .scrollbar-hide {
+          -ms-overflow-style: none;
+          scrollbar-width: none;
+        }
+      `}</style>
     </section>
   );
 }
