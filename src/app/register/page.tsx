@@ -2,9 +2,11 @@
 
 import Link from 'next/link';
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { ArrowLeft } from 'lucide-react';
 
 export default function RegisterPage() {
+  const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -26,11 +28,17 @@ export default function RegisterPage() {
     
     // Registration functionality will be implemented later
     console.log('Registration submitted:', { email, password, agreeToTerms });
+    
+    // Redirect to profile page after registration
+    router.push('/profile');
   };
 
   const handleGoogleSignup = () => {
     // Google signup functionality will be implemented later
     console.log('Google signup clicked');
+    
+    // Redirect to profile page after Google signup
+    router.push('/profile');
   };
 
   return (

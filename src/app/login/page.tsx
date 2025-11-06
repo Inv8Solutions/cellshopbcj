@@ -2,9 +2,11 @@
 
 import Link from 'next/link';
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { ArrowLeft } from 'lucide-react';
 
 export default function LoginPage() {
+  const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(false);
@@ -13,11 +15,17 @@ export default function LoginPage() {
     e.preventDefault();
     // Login functionality will be implemented later
     console.log('Login submitted:', { email, password, rememberMe });
+    
+    // Redirect to profile page after login
+    router.push('/profile');
   };
 
   const handleGoogleLogin = () => {
     // Google login functionality will be implemented later
     console.log('Google login clicked');
+    
+    // Redirect to profile page after Google login
+    router.push('/profile');
   };
 
   return (
