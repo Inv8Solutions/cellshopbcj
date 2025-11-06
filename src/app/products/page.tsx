@@ -25,7 +25,7 @@ export default function ProductsPage() {
     'Baguio City Jail',
     'La Trinidad Municipal Jail',
     'Benguet Provincial Jail',
-    'Benguet Provincial Jail'
+    'Tagudin Municipal Jail'
   ];
 
   // Mock products data
