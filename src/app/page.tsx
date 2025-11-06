@@ -2,6 +2,8 @@ import Navbar from '@/components/layout/Navbar';
 import HeroSection from '@/components/home/HeroSection';
 import FeaturesSection from '@/components/home/FeaturesSection';
 import ProductsPreviewSection from '@/components/home/ProductsPreviewSection';
+import ServicesSection from '@/components/home/ServicesSection';
+import CTASection from '@/components/home/CTASection';
 import Footer from '@/components/layout/Footer';
 
 export default function Home() {
@@ -12,6 +14,8 @@ export default function Home() {
         <HeroSection />
         <FeaturesSection />
         <ProductsPreviewSection />
+        <ServicesSection />
+        <CTASection />
         {/* Additional sections will be added here */}
       </main>
       <Footer />
