@@ -157,28 +157,34 @@ export default function ProductsPage() {
               <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-6">
                 {products.map((product) => (
                   <div key={product.id} className="group">
-                    {/* Product Image */}
-                    <div className="relative aspect-square rounded-2xl overflow-hidden bg-gray-200 mb-3">
-                      <div className="absolute inset-0 bg-gray-300 flex items-center justify-center">
-                        <span className="text-gray-400 text-xs">Product Image</span>
+                    <Link href={`/products/${product.id}`}>
+                      {/* Product Image */}
+                      <div className="relative aspect-square rounded-2xl overflow-hidden bg-gray-200 mb-3 cursor-pointer">
+                        <div className="absolute inset-0 bg-gray-300 flex items-center justify-center group-hover:bg-gray-400 transition-colors">
+                          <span className="text-gray-400 text-xs">Product Image</span>
+                        </div>
                       </div>
-                    </div>
+                    </Link>
 
                     {/* Product Info */}
                     <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0 flex-1">
-                        <h3 className="text-sm sm:text-base font-bold text-gray-900 mb-1 truncate">
+                      <Link href={`/products/${product.id}`} className="min-w-0 flex-1">
+                        <h3 className="text-sm sm:text-base font-bold text-gray-900 mb-1 truncate hover:text-gray-700">
                           {product.name}
                         </h3>
                         <p className="text-sm sm:text-base text-gray-900">
                           ₱{product.price.toFixed(2)}
                         </p>
-                      </div>
+                      </Link>
 
                       {/* Add to Cart Button */}
                       <button
                         className="shrink-0 w-9 h-9 rounded-full border-2 border-gray-900 flex items-center justify-center hover:bg-gray-900 hover:text-white transition-all"
                         aria-label={`Add ${product.name} to cart`}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          console.log('Add to cart:', product);
+                        }}
                       >
                         <ShoppingBag className="h-4 w-4" />
                       </button>
