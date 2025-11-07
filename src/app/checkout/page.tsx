@@ -35,9 +35,16 @@ export default function CheckoutPage() {
   };
 
   const handleContinue = () => {
-    // Validate and proceed to next step
+    // Validate form
+    if (!formData.fullName || !formData.phoneNumber || !formData.email || 
+        !formData.streetAddress || !formData.city || !formData.province || !formData.zipCode) {
+      alert('Please fill in all required fields');
+      return;
+    }
+    
     console.log('Form data:', formData);
-    // In a real app, this would submit the order
+    // Navigate to payment page
+    window.location.href = '/checkout/payment';
   };
 
   return (
