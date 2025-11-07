@@ -3,16 +3,35 @@
 import Link from 'next/link';
 import { useState } from 'react';
 import { ArrowLeft } from 'lucide-react';
+import { getAuth, sendPasswordResetEmail } from 'firebase/auth';
+import app from '@/firebase/config';
 
 export default function ForgotPasswordPage() {
+  // -----------------------------
+  // 🔧 State Management
+  // -----------------------------
   const [email, setEmail] = useState('');
+  const [loading, setLoading] = useState(false); // ✅ fixed: define loading state
 
-  const handleSubmit = (e: React.FormEvent) => {
+  // -----------------------------
+  // 📩 Handle Password Reset
+  // -----------------------------
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    // Password reset functionality will be implemented later
-    console.log('Password reset requested for:', email);
-    alert('A password reset link has been sent to your email!');
+    setLoading(true);
+
+    const auth = getAuth(app);
+
+    try {
+      await sendPasswordResetEmail(auth, email);
+      alert('✅ Password reset email sent!');
+      setEmail('');
+    } catch (error: any) {
+      console.error('Error sending password reset email:', error);
+      alert(`❌ Error: ${error.message}`);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -47,7 +66,7 @@ export default function ForgotPasswordPage() {
           <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-gray-900 text-center mb-3">
             Forgot Password?
           </h1>
-          
+
           {/* Subtitle */}
           <p className="text-sm text-gray-600 text-center mb-8">
             A link will be sent to your email to help reset your password
@@ -74,9 +93,14 @@ export default function ForgotPasswordPage() {
             {/* Reset Password Button */}
             <button
               type="submit"
-              className="w-full bg-black text-white py-3.5 rounded-full font-medium hover:bg-gray-800 transition-all duration-300 shadow-sm hover:shadow-md"
+              disabled={loading}
+              className={`w-full py-3.5 rounded-full font-medium text-white transition-all duration-300 shadow-sm hover:shadow-md ${
+                loading
+                  ? 'bg-gray-500 cursor-not-allowed'
+                  : 'bg-black hover:bg-gray-800'
+              }`}
             >
-              Reset Password
+              {loading ? 'Sending...' : 'Reset Password'}
             </button>
 
             {/* Back to Login Link */}

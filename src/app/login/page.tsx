@@ -4,29 +4,114 @@ import Link from 'next/link';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft } from 'lucide-react';
+import { getAuth, signInWithEmailAndPassword, GoogleAuthProvider, signInWithPopup, setPersistence, browserLocalPersistence, browserSessionPersistence } from 'firebase/auth';
+import app, { auth, db } from '../../firebase/config';
+import { doc, setDoc } from 'firebase/firestore';
 
 export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Login functionality will be implemented later
-    console.log('Login submitted:', { email, password, rememberMe });
-    
-    // Redirect to profile page after login
-    router.push('/profile');
+    setLoading(true);
+    setError('');
+
+    try {
+      const auth = getAuth(app);
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      const user = userCredential.user;
+      
+      console.log('Login successful:', user);
+      router.push('/profile');
+    } catch (error: any) {
+      console.error('Login error:', error);
+      
+      // User-friendly error messages
+      switch (error.code) {
+        case 'auth/invalid-email':
+          setError('Invalid email address format.');
+          break;
+        case 'auth/user-not-found':
+          setError('No account found with this email.');
+          break;
+        case 'auth/wrong-password':
+          setError('Incorrect password. Please try again.');
+          break;
+        case 'auth/invalid-credential':
+          setError('Invalid email or password.');
+          break;
+        case 'auth/too-many-requests':
+          setError('Too many failed attempts. Please try again later.');
+          break;
+        case 'auth/user-disabled':
+          setError('This account has been disabled.');
+          break;
+        case 'auth/network-request-failed':
+          setError('Network error. Please check your connection.');
+          break;
+        default:
+          setError('Login failed. Please try again.');
+      }
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleGoogleLogin = () => {
-    // Google login functionality will be implemented later
-    console.log('Google login clicked');
-    
-    // Redirect to profile page after Google login
+const handleGoogleLogin = async () => {
+  setLoading(true);
+  setError('');
+
+  const provider = new GoogleAuthProvider();
+
+  try {
+    // Set persistence based on rememberMe
+    await setPersistence(auth, rememberMe ? browserLocalPersistence : browserSessionPersistence);
+
+    // Attempt Google Sign-In via Popup
+    const result = await signInWithPopup(auth, provider);
+    const user = result.user;
+
+    // Store or merge user info in Firestore
+    const userRef = doc(db, 'users', user.uid);
+    await setDoc(
+      userRef,
+      {
+        email: user.email,
+        name: user.displayName,
+        photoURL: user.photoURL,
+      },
+      { merge: true }
+    );
+
+    console.log('Google login successful:', user);
     router.push('/profile');
-  };
+  } catch (error: any) {
+    console.error('Google login error:', error);
+
+    // ✅ Handle popup closed by user
+    if (error.code === 'auth/popup-closed-by-user') {
+      console.warn('Google login popup was closed by the user.');
+
+      // Option 1: Soft refresh using Next.js router
+      router.refresh();
+
+      // Option 2 (alternative): Hard reload page
+      // window.location.reload();
+
+      return;
+    }
+
+    // Handle any other Google login error
+    setError('Google login failed. Please try again.');
+  } finally {
+    setLoading(false);
+  }
+};
 
   return (
     <div className="min-h-screen flex flex-col bg-white">
@@ -61,13 +146,21 @@ export default function LoginPage() {
             Welcome Back!
           </h1>
 
+          {/* Error Display */}
+          {error && (
+            <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+              {error}
+            </div>
+          )}
+
           {/* Login Form */}
           <form onSubmit={handleSubmit} className="space-y-6">
             {/* Google Login Button */}
             <button
               type="button"
               onClick={handleGoogleLogin}
-              className="w-full flex items-center justify-center gap-3 px-6 py-3 bg-white border border-gray-300 rounded-full text-gray-900 font-medium hover:bg-gray-50 transition-all duration-300"
+              disabled={loading}
+              className="w-full flex items-center justify-center gap-3 px-6 py-3 bg-white border border-gray-300 rounded-full text-gray-900 font-medium hover:bg-gray-50 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
                 <path d="M19.805 10.23c0-.639-.057-1.252-.164-1.841H10.1v3.481h5.441a4.65 4.65 0 0 1-2.018 3.049v2.839h3.268c1.911-1.759 3.014-4.35 3.014-7.528z" fill="#4285F4"/>
@@ -75,7 +168,7 @@ export default function LoginPage() {
                 <path d="M4.442 11.436a5.948 5.948 0 0 1 0-3.803V4.703H1.051a9.893 9.893 0 0 0 0 9.663l3.39-2.93z" fill="#FBBC04"/>
                 <path d="M10.1 3.901c1.484 0 2.817.51 3.865 1.512l2.9-2.9C15.113.964 12.826 0 10.1 0 6.15 0 2.721 2.485 1.051 6.05l3.39 2.93c.798-2.39 3.027-4.168 5.66-4.168z" fill="#EA4335"/>
               </svg>
-              Login with Google
+              {loading ? 'Signing in...' : 'Login with Google'}
             </button>
 
             {/* Divider */}
@@ -100,7 +193,8 @@ export default function LoginPage() {
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="Enter your Email"
                 required
-                className="w-full px-4 py-3 bg-gray-50 border-0 rounded-lg text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-200 focus:bg-white transition-all"
+                disabled={loading}
+                className="w-full px-4 py-3 bg-gray-50 border-0 rounded-lg text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-200 focus:bg-white transition-all disabled:opacity-50"
               />
             </div>
 
@@ -116,7 +210,8 @@ export default function LoginPage() {
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="Enter your Password"
                 required
-                className="w-full px-4 py-3 bg-gray-50 border-0 rounded-lg text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-200 focus:bg-white transition-all"
+                disabled={loading}
+                className="w-full px-4 py-3 bg-gray-50 border-0 rounded-lg text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-200 focus:bg-white transition-all disabled:opacity-50"
               />
             </div>
 
@@ -127,7 +222,8 @@ export default function LoginPage() {
                   type="checkbox"
                   checked={rememberMe}
                   onChange={(e) => setRememberMe(e.target.checked)}
-                  className="w-4 h-4 rounded border-gray-300 text-black focus:ring-2 focus:ring-gray-200"
+                  disabled={loading}
+                  className="w-4 h-4 rounded border-gray-300 text-black focus:ring-2 focus:ring-gray-200 disabled:opacity-50"
                 />
                 <span className="text-gray-900">Remember me?</span>
               </label>
@@ -142,9 +238,10 @@ export default function LoginPage() {
             {/* Login Button */}
             <button
               type="submit"
-              className="w-full bg-black text-white py-3.5 rounded-full font-medium hover:bg-gray-800 transition-all duration-300 shadow-sm hover:shadow-md"
+              disabled={loading}
+              className="w-full bg-black text-white py-3.5 rounded-full font-medium hover:bg-gray-800 transition-all duration-300 shadow-sm hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Log In
+              {loading ? 'Signing in...' : 'Log In'}
             </button>
 
             {/* Sign Up Link */}
