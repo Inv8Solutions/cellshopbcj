@@ -27,8 +27,8 @@ export default function ProductsPage() {
   // State
   // ------------------------------
   const [priceRange, setPriceRange] = useState<[number, number]>([0, 100000]);
-  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
-  const [selectedFacilities, setSelectedFacilities] = useState<string[]>([]);
+  const [selectedCategory, setSelectedCategory] = useState<string>(''); // single selection
+  const [selectedFacility, setSelectedFacility] = useState<string>(''); // single selection
   const [sortBy, setSortBy] = useState<'featured' | 'price-low' | 'price-high' | 'newest'>('featured');
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
@@ -50,25 +50,6 @@ export default function ProductsPage() {
   ];
 
   // ------------------------------
-  // Toggle Category/Facility Selection
-  // ------------------------------
-  const toggleCategory = (category: string) => {
-    setSelectedCategories(prev =>
-      prev.includes(category)
-        ? prev.filter(c => c !== category)
-        : [...prev, category]
-    );
-  };
-
-  const toggleFacility = (facility: string) => {
-    setSelectedFacilities(prev =>
-      prev.includes(facility)
-        ? prev.filter(f => f !== facility)
-        : [...prev, facility]
-    );
-  };
-
-  // ------------------------------
   // Fetch products from Firestore
   // ------------------------------
   useEffect(() => {
@@ -78,9 +59,9 @@ export default function ProductsPage() {
       try {
         const constraints: QueryConstraint[] = [];
 
-        // Apply filters safely
-        if (selectedCategories.length > 0) constraints.push(where('category', 'in', selectedCategories));
-        if (selectedFacilities.length > 0) constraints.push(where('facility', 'in', selectedFacilities));
+        // Firestore filtering (single selection)
+        if (selectedCategory) constraints.push(where('category', '==', selectedCategory));
+        if (selectedFacility) constraints.push(where('facility', '==', selectedFacility));
         constraints.push(where('price', '>=', priceRange[0]));
         constraints.push(where('price', '<=', priceRange[1]));
 
@@ -99,7 +80,7 @@ export default function ProductsPage() {
             id: doc.id,
             name: data.name || 'Unnamed Product',
             price: typeof data.price === 'number' ? data.price : 0,
-            image: data.image || '/placeholder.png', // fallback placeholder
+            image: data.image || '/placeholder.png',
             category: data.category || 'Uncategorized',
             facility: data.facility || 'Unknown Facility',
             createdAt: data.createdAt || null,
@@ -115,7 +96,7 @@ export default function ProductsPage() {
     };
 
     fetchProducts();
-  }, [selectedCategories, selectedFacilities, priceRange, sortBy]);
+  }, [selectedCategory, selectedFacility, priceRange, sortBy]);
 
   // ------------------------------
   // JSX Rendering
@@ -160,16 +141,17 @@ export default function ProductsPage() {
                 </div>
               </div>
 
-              {/* Categories */}
+              {/* Categories (Radio) */}
               <div>
                 <h3 className="font-bold text-gray-900 mb-4">Categories</h3>
                 <div className="space-y-3">
                   {categories.map((category) => (
                     <label key={category} className="flex items-center gap-3 cursor-pointer group">
                       <input
-                        type="checkbox"
-                        checked={selectedCategories.includes(category)}
-                        onChange={() => toggleCategory(category)}
+                        type="radio"
+                        name="category"
+                        checked={selectedCategory === category}
+                        onChange={() => setSelectedCategory(category)}
                         className="w-4 h-4 rounded border-gray-300 text-black focus:ring-2 focus:ring-gray-200"
                       />
                       <span className="text-sm text-gray-700 group-hover:text-gray-900">
@@ -180,16 +162,17 @@ export default function ProductsPage() {
                 </div>
               </div>
 
-              {/* Facilities */}
+              {/* Facilities (Radio) */}
               <div>
                 <h3 className="font-bold text-gray-900 mb-4">Facilities</h3>
                 <div className="space-y-3">
                   {facilities.map((facility) => (
                     <label key={facility} className="flex items-center gap-3 cursor-pointer group">
                       <input
-                        type="checkbox"
-                        checked={selectedFacilities.includes(facility)}
-                        onChange={() => toggleFacility(facility)}
+                        type="radio"
+                        name="facility"
+                        checked={selectedFacility === facility}
+                        onChange={() => setSelectedFacility(facility)}
                         className="w-4 h-4 rounded border-gray-300 text-black focus:ring-2 focus:ring-gray-200"
                       />
                       <span className="text-sm text-gray-700 group-hover:text-gray-900">

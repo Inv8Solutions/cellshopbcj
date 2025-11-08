@@ -1,57 +1,83 @@
 'use client';
 
-import { use, useState } from 'react';
+import { use, useState, useEffect } from 'react';
 import Link from 'next/link';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '@/firebase/config';
 import Navbar from '@/components/layout/Navbar';
 import Footer from '@/components/layout/Footer';
 import ContactSection from '@/components/home/ContactSection';
 import { Star, ShoppingCart, Minus, Plus } from 'lucide-react';
 
-// Mock product data - in a real app, this would come from an API or database
-const getProductDetails = (id: string) => {
-  return {
-    id,
-    name: 'Bamboo Mug',
-    price: 120.00,
-    rating: 4.8,
-    description: 'Handcrafted from sustainably sourced bamboo, this eco-friendly mug is both durable and elegant — perfect for your morning coffee or tea. Each piece is uniquely made through BuMel\'s livelihood programs, supporting rehabilitation and meaningful work for displaced or liberty.',
-    category: 'Woodcrafts',
-    images: [
-      '/products/bamboo-mug-1.jpg',
-      '/products/bamboo-mug-2.jpg',
-      '/products/bamboo-mug-3.jpg',
-      '/products/bamboo-mug-4.jpg',
-    ],
-    specifications: [
-      { label: 'Material', value: 'Natural Bamboo' },
-      { label: 'Finish', value: 'Polished, food-safe coating' },
-      { label: 'Dimensions', value: 'Approx. 10cm (H) × 8cm (D)' },
-      { label: 'Care', value: 'Hand wash only, avoid prolonged soaking' },
-    ],
-    stock: 50,
-  };
-};
+interface Specification {
+  label: string;
+  value: string;
+}
+
+interface Product {
+  id: string;
+  name: string;
+  price: number;
+  rating: number;
+  description: string;
+  category: string;
+  images: string[];
+  specifications: Specification[];
+  stock: number;
+}
 
 export default function ProductDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = use(params);
+  const { id } = use(params); // unwrap Promise safely
+  const [product, setProduct] = useState<Product | null>(null);
   const [quantity, setQuantity] = useState(1);
   const [selectedImage, setSelectedImage] = useState(0);
-  
-  const product = getProductDetails(id);
+
+  // Fetch product data from Firestore
+  useEffect(() => {
+    const fetchProduct = async () => {
+      try {
+        const docRef = doc(db, 'items', id);
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          // Ensure all required fields have fallback defaults
+          setProduct({
+            id: docSnap.id,
+            name: data?.name || 'No Name',
+            price: typeof data?.price === 'number' ? data.price : 0,
+            rating: typeof data?.rating === 'number' ? data.rating : 0,
+            description: data?.description || 'No description available.',
+            category: data?.category || 'Uncategorized',
+            images: Array.isArray(data?.images) && data.images.length > 0 ? data.images : ['/products/placeholder.png'],
+            specifications: Array.isArray(data?.specifications) ? data.specifications : [],
+            stock: typeof data?.stock === 'number' ? data.stock : 0,
+          });
+        } else {
+          console.warn('Product not found in Firestore');
+        }
+      } catch (error) {
+        console.error('Error fetching product:', error);
+      }
+    };
+    fetchProduct();
+  }, [id]);
 
   const handleQuantityChange = (delta: number) => {
+    if (!product) return;
     setQuantity(Math.max(1, Math.min(product.stock, quantity + delta)));
   };
 
   const handleAddToCart = () => {
-    // Add to cart logic here
-    console.log('Adding to cart:', { product, quantity });
+    if (!product) return;
+    console.log('Add to cart:', { product, quantity });
   };
 
   const handleBuyNow = () => {
-    // Buy now logic here
+    if (!product) return;
     console.log('Buy now:', { product, quantity });
   };
+
+  if (!product) return <div className="min-h-screen flex items-center justify-center">Loading product...</div>;
 
   return (
     <div className="min-h-screen flex flex-col bg-white">
@@ -64,7 +90,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
             <span>›</span>
             <Link href="/products" className="hover:text-gray-900">Shop</Link>
             <span>›</span>
-            <Link href="/products" className="hover:text-gray-900">{product.category}</Link>
+            <Link href={`/products/${product.category}`} className="hover:text-gray-900">{product.category}</Link>
             <span>›</span>
             <span className="text-gray-900 font-medium">{product.name}</span>
           </div>
@@ -75,9 +101,11 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
             <div>
               {/* Main Image */}
               <div className="relative aspect-square rounded-2xl overflow-hidden bg-gray-200 mb-4">
-                <div className="absolute inset-0 bg-gray-300 flex items-center justify-center">
-                  <span className="text-gray-400 text-sm">Product Image {selectedImage + 1}</span>
-                </div>
+                <img
+                  src={product.images[selectedImage]}
+                  alt={product.name}
+                  className="object-cover w-full h-full"
+                />
               </div>
 
               {/* Thumbnail Images */}
@@ -86,13 +114,11 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                   <button
                     key={index}
                     onClick={() => setSelectedImage(index)}
-                    className={`relative aspect-square rounded-lg overflow-hidden bg-gray-200 border-2 transition-all ${
+                    className={`relative aspect-square rounded-lg overflow-hidden border-2 transition-all ${
                       selectedImage === index ? 'border-gray-900' : 'border-transparent hover:border-gray-400'
                     }`}
                   >
-                    <div className="absolute inset-0 bg-gray-300 flex items-center justify-center">
-                      <span className="text-gray-400 text-xs">{index + 1}</span>
-                    </div>
+                    <img src={product.images[index]} alt={`Thumbnail ${index + 1}`} className="object-cover w-full h-full" />
                   </button>
                 ))}
               </div>
@@ -120,19 +146,13 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
               </div>
 
               {/* Product Name */}
-              <h1 className="text-3xl lg:text-4xl font-bold text-gray-900">
-                {product.name}
-              </h1>
+              <h1 className="text-3xl lg:text-4xl font-bold text-gray-900">{product.name}</h1>
 
               {/* Price */}
-              <p className="text-3xl font-bold text-gray-900">
-                ₱{product.price.toFixed(2)}
-              </p>
+              <p className="text-3xl font-bold text-gray-900">₱{product.price.toFixed(2)}</p>
 
               {/* Description */}
-              <p className="text-sm lg:text-base text-gray-600 leading-relaxed">
-                {product.description}
-              </p>
+              <p className="text-sm lg:text-base text-gray-600 leading-relaxed">{product.description}</p>
 
               {/* Quantity Selector */}
               <div>
@@ -181,124 +201,18 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
               </div>
 
               {/* Product Specifications */}
-              <div className="pt-6 border-t border-gray-200">
-                <h3 className="text-lg font-bold text-gray-900 mb-4">Product Specifications</h3>
-                <ul className="space-y-2">
-                  {product.specifications.map((spec, index) => (
-                    <li key={index} className="text-sm text-gray-700">
-                      <span className="font-medium">• {spec.label}:</span> {spec.value}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            </div>
-          </div>
-
-          {/* Products You May Like Section */}
-          <div className="py-12 border-t border-gray-200">
-            <h2 className="text-2xl lg:text-3xl font-bold text-gray-900 text-center mb-8">
-              Products You May Like
-            </h2>
-            
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 lg:gap-8">
-              {/* Product 1 */}
-              <div className="group">
-                <Link href="/products/2">
-                  <div className="relative aspect-square rounded-2xl overflow-hidden bg-gray-200 mb-4 cursor-pointer">
-                    <div className="absolute inset-0 bg-gray-300 flex items-center justify-center group-hover:bg-gray-400 transition-colors">
-                      <span className="text-gray-400 text-sm">Product Image</span>
-                    </div>
-                  </div>
-                </Link>
-                
-                <div className="flex items-start justify-between gap-3">
-                  <Link href="/products/2" className="flex-1">
-                    <h3 className="text-base lg:text-lg font-bold text-gray-900 mb-1 hover:text-gray-700">
-                      Bamboo Mug
-                    </h3>
-                    <p className="text-base lg:text-lg text-gray-900">
-                      ₱120.00
-                    </p>
-                  </Link>
-                  
-                  <button
-                    className="shrink-0 w-10 h-10 rounded-full border-2 border-gray-900 flex items-center justify-center hover:bg-gray-900 hover:text-white transition-all"
-                    aria-label="Add Bamboo Mug to cart"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      console.log('Add to cart: Bamboo Mug');
-                    }}
-                  >
-                    <ShoppingCart className="h-4 w-4" />
-                  </button>
+              {product.specifications.length > 0 && (
+                <div className="pt-6 border-t border-gray-200">
+                  <h3 className="text-lg font-bold text-gray-900 mb-4">Product Specifications</h3>
+                  <ul className="space-y-2">
+                    {product.specifications.map((spec, index) => (
+                      <li key={index} className="text-sm text-gray-700">
+                        <span className="font-medium">• {spec.label}:</span> {spec.value}
+                      </li>
+                    ))}
+                  </ul>
                 </div>
-              </div>
-
-              {/* Product 2 */}
-              <div className="group">
-                <Link href="/products/3">
-                  <div className="relative aspect-square rounded-2xl overflow-hidden bg-gray-200 mb-4 cursor-pointer">
-                    <div className="absolute inset-0 bg-gray-300 flex items-center justify-center group-hover:bg-gray-400 transition-colors">
-                      <span className="text-gray-400 text-sm">Product Image</span>
-                    </div>
-                  </div>
-                </Link>
-                
-                <div className="flex items-start justify-between gap-3">
-                  <Link href="/products/3" className="flex-1">
-                    <h3 className="text-base lg:text-lg font-bold text-gray-900 mb-1 hover:text-gray-700">
-                      Woven Storage Basket
-                    </h3>
-                    <p className="text-base lg:text-lg text-gray-900">
-                      ₱150.00
-                    </p>
-                  </Link>
-                  
-                  <button
-                    className="shrink-0 w-10 h-10 rounded-full border-2 border-gray-900 flex items-center justify-center hover:bg-gray-900 hover:text-white transition-all"
-                    aria-label="Add Woven Storage Basket to cart"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      console.log('Add to cart: Woven Storage Basket');
-                    }}
-                  >
-                    <ShoppingCart className="h-4 w-4" />
-                  </button>
-                </div>
-              </div>
-
-              {/* Product 3 */}
-              <div className="group">
-                <Link href="/products/4">
-                  <div className="relative aspect-square rounded-2xl overflow-hidden bg-gray-200 mb-4 cursor-pointer">
-                    <div className="absolute inset-0 bg-gray-300 flex items-center justify-center group-hover:bg-gray-400 transition-colors">
-                      <span className="text-gray-400 text-sm">Product Image</span>
-                    </div>
-                  </div>
-                </Link>
-                
-                <div className="flex items-start justify-between gap-3">
-                  <Link href="/products/4" className="flex-1">
-                    <h3 className="text-base lg:text-lg font-bold text-gray-900 mb-1 hover:text-gray-700">
-                      Recycled Paper Journal
-                    </h3>
-                    <p className="text-base lg:text-lg text-gray-900">
-                      ₱180.00
-                    </p>
-                  </Link>
-                  
-                  <button
-                    className="shrink-0 w-10 h-10 rounded-full border-2 border-gray-900 flex items-center justify-center hover:bg-gray-900 hover:text-white transition-all"
-                    aria-label="Add Recycled Paper Journal to cart"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      console.log('Add to cart: Recycled Paper Journal');
-                    }}
-                  >
-                    <ShoppingCart className="h-4 w-4" />
-                  </button>
-                </div>
-              </div>
+              )}
             </div>
           </div>
         </div>
