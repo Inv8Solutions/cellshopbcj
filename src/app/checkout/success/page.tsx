@@ -4,24 +4,13 @@ import { useEffect, useState } from 'react';
 import { CheckCircle, Home, Download, MapPin, Phone, Mail, Package, Truck, MapPinned } from 'lucide-react';
 import Link from 'next/link';
 import { db, auth } from '@/firebase/config';
-import {
-  collection,
-  query,
-  where,
-  orderBy,
-  limit,
-  getDocs,
-  doc,
-  getDoc
-} from 'firebase/firestore';
+import {collection,query,where,orderBy,limit,getDocs,doc,getDoc} from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth';
-import { useSearchParams } from 'next/navigation';
 
 export default function OrderSuccessPage() {
   const [orderData, setOrderData] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
-  const searchParams = useSearchParams();
-  const orderIdParam = searchParams?.get('orderId');
+  // We'll read the orderId from window.location.search inside the effect
 
   useEffect(() => {
     // Helper: load preview from localStorage if present. Prefer explicit checkout_* keys
@@ -76,12 +65,15 @@ export default function OrderSuccessPage() {
       return false;
     };
 
+    // Read orderId from URL on the client
+    const orderIdParamLocal = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('orderId') : null;
+
     // Wait for auth state to be known. This handles the case where auth isn't initialized yet.
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       try {
         // If an explicit orderId param is present, try fetching that order first (works without auth)
-        if (orderIdParam) {
-          const ok = await fetchById(orderIdParam);
+        if (orderIdParamLocal) {
+          const ok = await fetchById(orderIdParamLocal);
           if (ok) {
             setLoading(false);
             return;
@@ -115,7 +107,7 @@ export default function OrderSuccessPage() {
     });
 
     return () => unsubscribe();
-  }, [orderIdParam]);
+  }, []);
 
   // Fallback mock values when no order data is available
   const fallbackItems = [
