@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, ShoppingBag, CreditCard, CheckCircle, ArrowRight, Wallet, Banknote } from 'lucide-react';
 
@@ -8,22 +8,72 @@ export default function PaymentPage() {
   const [paymentMethod, setPaymentMethod] = useState('cod');
   const [shippingMethod, setShippingMethod] = useState('standard');
 
-  // Mock cart data
-  const cartItems = [
-    { id: 1, name: 'Bamboo Mug', price: 120.00, quantity: 1 },
-    { id: 2, name: 'Woven Basket', price: 150.00, quantity: 1 },
-    { id: 3, name: 'Paper Journal', price: 180.00, quantity: 1 },
-  ];
+  interface CheckoutItem {
+    id: string | number;
+    productId?: string | number;
+    name: string;
+    price: number;
+    quantity: number;
+    image?: string;
+    category?: string | null;
+  }
 
-  const subtotal = cartItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+  const [cartItems, setCartItems] = useState<CheckoutItem[]>([]);
+  const [checkoutSubtotal, setCheckoutSubtotal] = useState<number | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    try {
+      // Check if we have shipping info from previous step
+      const shippingInfo = localStorage.getItem('checkout_shipping');
+      if (!shippingInfo) {
+        // Redirect back to shipping info page if data is missing
+        window.location.href = '/checkout';
+        return;
+      }
+
+      const raw = localStorage.getItem('checkout_items');
+      const rawTotal = localStorage.getItem('checkout_total');
+
+      if (raw) {
+        const parsed: CheckoutItem[] = JSON.parse(raw);
+        setCartItems(parsed);
+      }
+
+      if (rawTotal) {
+        const parsedTotal = JSON.parse(rawTotal);
+        // In cart we store subtotal (selected items) as checkout_total
+        setCheckoutSubtotal(Number(parsedTotal));
+      }
+    } catch (err) {
+      console.error('Error reading checkout payload from localStorage:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // subtotal is either the passed subtotal from cart or computed from items as fallback
+  const computedSubtotal = cartItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+  const subtotal = checkoutSubtotal !== null ? checkoutSubtotal : computedSubtotal;
   const shippingCost = shippingMethod === 'standard' ? 0 : 100;
   const total = subtotal + shippingCost;
 
   const handleContinue = () => {
-    console.log('Payment method:', paymentMethod);
-    console.log('Shipping method:', shippingMethod);
-    // Proceed to review/confirmation
-    window.location.href = '/checkout/review';
+    // Save payment and shipping selections to localStorage
+    const paymentData = {
+      method: paymentMethod,
+      shippingMethod: shippingMethod,
+      shippingCost: shippingMethod === 'standard' ? 0 : 100
+    };
+    
+    try {
+      localStorage.setItem('checkout_payment', JSON.stringify(paymentData));
+      // Redirect to review page
+      window.location.href = '/checkout/review';
+    } catch (err) {
+      console.error('Error saving payment data:', err);
+      alert('There was an error saving your payment information. Please try again.');
+    }
   };
 
   return (
@@ -93,8 +143,8 @@ export default function PaymentPage() {
                       <input
                         type="radio"
                         name="payment"
-                        value="cod"
-                        checked={paymentMethod === 'cod'}
+                        value="Cash-On-Delivery"
+                        checked={paymentMethod === 'Cash-On-Delivery'}
                         onChange={(e) => setPaymentMethod(e.target.value)}
                         className="w-5 h-5 text-gray-900 focus:ring-2 focus:ring-gray-900"
                       />
@@ -107,23 +157,31 @@ export default function PaymentPage() {
                   </label>
 
                   {/* GCash */}
-                  <label className="flex items-center justify-between p-4 border-2 border-gray-200 rounded-xl cursor-pointer hover:border-gray-300 transition-colors">
-                    <div className="flex items-center gap-3">
-                      <input
-                        type="radio"
-                        name="payment"
-                        value="gcash"
-                        checked={paymentMethod === 'gcash'}
-                        onChange={(e) => setPaymentMethod(e.target.value)}
-                        className="w-5 h-5 text-gray-900 focus:ring-2 focus:ring-gray-900"
-                      />
-                      <div>
-                        <p className="font-semibold text-gray-900">GCash</p>
-                        <p className="text-sm text-gray-600">Fast and secure mobile payment</p>
+                  <div className="relative">
+                    <label className="flex items-center justify-between p-4 border-2 border-gray-200 rounded-xl cursor-not-allowed bg-gray-50">
+                      <div className="flex items-center gap-3">
+                        <input
+                          type="radio"
+                          name="payment"
+                          value="gcash"
+                          checked={paymentMethod === 'gcash'}
+                          onChange={(e) => setPaymentMethod(e.target.value)}
+                          className="w-5 h-5 text-gray-300 cursor-not-allowed"
+                          disabled
+                        />
+                        <div>
+                          <p className="font-semibold text-gray-400">GCash</p>
+                          <p className="text-sm text-gray-400">Fast and secure mobile payment</p>
+                        </div>
                       </div>
+                      <Wallet className="w-5 h-5 text-gray-300" />
+                    </label>
+                    <div className="absolute right-4 top-1/2 -translate-y-1/2">
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
+                        Unavailable, Coming Soon
+                      </span>
                     </div>
-                    <Wallet className="w-5 h-5 text-gray-400" />
-                  </label>
+                  </div>
                 </div>
               </div>
 
@@ -137,8 +195,8 @@ export default function PaymentPage() {
                       type="radio"
                       id="standard"
                       name="shipping"
-                      value="standard"
-                      checked={shippingMethod === 'standard'}
+                      value="Standard"
+                      checked={shippingMethod === 'Standard'}
                       onChange={(e) => setShippingMethod(e.target.value)}
                       className="w-5 h-5 text-gray-900 focus:ring-2 focus:ring-gray-900 mt-0.5"
                     />
@@ -155,8 +213,8 @@ export default function PaymentPage() {
                       type="radio"
                       id="express"
                       name="shipping"
-                      value="express"
-                      checked={shippingMethod === 'express'}
+                      value="Express"
+                      checked={shippingMethod === 'Express'}
                       onChange={(e) => setShippingMethod(e.target.value)}
                       className="w-5 h-5 text-gray-900 focus:ring-2 focus:ring-gray-900 mt-0.5"
                     />

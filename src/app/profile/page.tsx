@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useState, useEffect } from 'react';
 import { Search, ShoppingBag, Heart, Package, ShoppingCart, Settings, LogOut, User } from 'lucide-react';
 import { getAuth, onAuthStateChanged, updatePassword, reauthenticateWithCredential, EmailAuthProvider, User as FirebaseUser } from 'firebase/auth';
-import { doc, getDoc, collection, getDocs } from 'firebase/firestore';
+import { doc, getDoc, collection, getDocs, onSnapshot } from 'firebase/firestore';
 import { db } from '@/firebase/config';
 import { useRouter } from 'next/navigation';
 
@@ -19,18 +19,25 @@ interface QuickAction {
 interface Order {
   id: string;
   status: string;
-  items: string[];
+  // items can be array of strings or detailed objects stored in Firestore
+  items: any[];
   total: number;
   createdAt: any;
+  // optional detailed fields saved by checkout/review flow
+  shippingInfo?: any;
+  subtotal?: number;
+  shippingCost?: number;
 }
 
 export default function ProfilePage() {
   const [activeTab, setActiveTab] = useState('overview');
   const [user, setUser] = useState<{ name: string; email: string; uid?: string }>({ name: '', email: '', uid: '' });
   const [orders, setOrders] = useState<Order[]>([]);
+  const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [savedItems, setSavedItems] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
+  const [cartCount, setCartCount] = useState(0);
 
   // Change password states
   const [currentPassword, setCurrentPassword] = useState('');
@@ -79,6 +86,20 @@ export default function ProfilePage() {
   }, []);
 
   // ------------------------------
+  // Listen for cart updates
+  // ------------------------------
+  useEffect(() => {
+    if (!user.uid) return;
+
+    const cartRef = collection(db, 'users', user.uid, 'cart');
+    const unsubscribe = onSnapshot(cartRef, (snapshot) => {
+      setCartCount(snapshot.docs.length);
+    });
+
+    return () => unsubscribe();
+  }, [user.uid]);
+
+  // ------------------------------
   // Fetch subcollection data based on active tab
   // ------------------------------
   useEffect(() => {
@@ -89,13 +110,23 @@ export default function ProfilePage() {
       try {
         if (activeTab === 'orders') {
           const ordersSnap = await getDocs(collection(db, 'users', user.uid!, 'orders'));
-          const ordersData: Order[] = ordersSnap.docs.map(doc => ({
-            id: doc.id,
-            status: doc.data().status || 'Pending',
-            items: doc.data().items || [],
-            total: doc.data().total || 0,
-            createdAt: doc.data().createdAt || null,
-          }));
+          const ordersData: Order[] = ordersSnap.docs.map(doc => {
+            const data = doc.data();
+            return ({
+              id: doc.id,
+              status: data.status || 'Pending',
+              items: data.items || [],
+              total: data.total || 0,
+              createdAt: data.createdAt || null,
+              // include detailed fields so the modal can render shipping/payment info
+              shippingInfo: data.shippingInfo ?? null,
+              subtotal: data.subtotal ?? data.subTotal ?? null,
+              shippingCost: data.shippingCost ?? null,
+              // include payment info if available
+              // @ts-ignore
+              paymentInfo: data.paymentInfo ?? null,
+            });
+          });
           setOrders(ordersData);
         } else if (activeTab === 'saved') {
           const savedSnap = await getDocs(collection(db, 'users', user.uid!, 'saved'));
@@ -118,6 +149,39 @@ export default function ProfilePage() {
   useEffect(() => {
     setShowSettings(activeTab === 'settings');
   }, [activeTab]);
+
+  // Lock body scroll when modal is open
+  useEffect(() => {
+    if (selectedOrder) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => { document.body.style.overflow = ''; };
+  }, [selectedOrder]);
+
+  // Close modal on Escape
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setSelectedOrder(null);
+    };
+    if (selectedOrder) window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [selectedOrder]);
+
+  // Helper: normalize shipping info shapes (object keys may vary)
+  const normalizeShipping = (s: any) => {
+    if (!s) return null;
+    return {
+      fullName: s.fullName ?? s.name ?? s.full_name ?? '',
+      streetAddress: s.streetAddress ?? s.address ?? s.street ?? '',
+      city: s.city ?? s.town ?? s.municipality ?? '',
+      province: s.province ?? s.state ?? '',
+      zipCode: s.zipCode ?? s.zip ?? s.postal ?? '',
+      phoneNumber: s.phoneNumber ?? s.phone ?? s.contact ?? '',
+      email: s.email ?? s.emailAddress ?? ''
+    };
+  };
 
   // ------------------------------
   // Sidebar click handler
@@ -155,7 +219,14 @@ export default function ProfilePage() {
     }
   };
 
-  if (loading) return <p className="p-6 text-center">Loading...</p>;
+  if (loading) return (
+    <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <div className="text-center">
+        <div className="w-16 h-16 border-4 border-black border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+        <p className="text-gray-600">Loading your profile...</p>
+      </div>
+    </div>
+  );
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
@@ -174,17 +245,32 @@ export default function ProfilePage() {
             </div>
             <div className="flex items-center gap-6">
               <Link href="/products" className="hidden md:block text-sm font-medium text-gray-700 hover:text-gray-900">Browse Products</Link>
-              <button className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
+              <Link 
+                href="/cart" 
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors relative"
+                title={`Shopping Cart (${cartCount} items)`}
+              >
                 <ShoppingCart className="w-5 h-5 text-gray-700" />
-              </button>
+                {cartCount > 0 && (
+                  <span className="absolute -top-1 -right-1 bg-black text-white text-xs w-5 h-5 flex items-center justify-center rounded-full">
+                    {cartCount}
+                  </span>
+                )}
+              </Link>
               <div className="flex items-center gap-2">
-                <div className="w-10 h-10 rounded-full bg-black flex items-center justify-center text-white font-medium">
-                  <User className="w-5 h-5" />
-                </div>
-                <div className="hidden lg:block">
-                  <div className="text-sm font-medium text-gray-900">{user.name}</div>
-                  <div className="text-xs text-gray-500">Customer</div>
-                </div>
+                {loading ? (
+                  <div className="w-10 h-10 rounded-full bg-gray-200 animate-pulse" />
+                ) : (
+                  <>
+                    <div className="w-10 h-10 rounded-full bg-black flex items-center justify-center text-white font-medium" title={user.name || user.email}>
+                      {user.name ? user.name[0].toUpperCase() : <User className="w-5 h-5" />}
+                    </div>
+                    <div className="hidden lg:block">
+                      <div className="text-sm font-medium text-gray-900">{user.name || 'Welcome'}</div>
+                      <div className="text-xs text-gray-500">{user.email}</div>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -264,15 +350,115 @@ export default function ProfilePage() {
                           </div>
                           <span className="px-4 py-1.5 bg-black text-white text-xs font-medium rounded-full">{order.status}</span>
                         </div>
-                        <div className="mb-4">
-                          <p className="text-sm text-gray-600 mb-1">Items: {order.items.join(', ')}</p>
-                          <p className="text-lg font-bold text-gray-900">Total: ₱{order.total.toFixed(2)}</p>
-                        </div>
-                        <button className="w-full sm:w-auto px-6 py-2.5 bg-black text-white text-sm font-medium rounded-full hover:bg-gray-800 transition-colors">View Details</button>
+                                      <div className="mb-4">
+                                        <p className="text-sm text-gray-600 mb-1">Items: {Array.isArray(order.items) ? (order.items.map((it:any)=> typeof it === 'string' ? it : it.name).join(', ')) : String(order.items)}</p>
+                                        <p className="text-lg font-bold text-gray-900">Total: ₱{order.total.toFixed(2)}</p>
+                                      </div>
+                                      <button onClick={() => setSelectedOrder(order)} className="w-full sm:w-auto px-6 py-2.5 bg-black text-white text-sm font-medium rounded-full hover:bg-gray-800 transition-colors">View Details</button>
                       </div>
                     ))}
                   </div>
                 )}
+              </div>
+            )}
+
+            {/* Order Details Modal */}
+            {selectedOrder && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center">
+                <div className="absolute inset-0 bg-black/50" onClick={() => setSelectedOrder(null)} />
+                <div className="relative z-10 w-full max-w-2xl mx-4">
+                  <div className="bg-white rounded-2xl p-6 shadow-xl">
+                    <div className="flex items-start justify-between mb-4">
+                      <div>
+                        <h3 className="text-xl font-bold text-gray-900">Order #{selectedOrder.id}</h3>
+                        <p className="text-sm text-gray-600">Placed on {selectedOrder.createdAt?.toDate?.()?.toLocaleString?.() ?? new Date(selectedOrder.createdAt).toLocaleString()}</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="px-3 py-1 rounded-full bg-gray-100 text-sm text-gray-800">{selectedOrder.status}</span>
+                        <button onClick={() => setSelectedOrder(null)} className="text-sm text-gray-500 hover:text-gray-900 absolute top-2 right-2">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18 18 6M6 6l12 12" />
+                            </svg>
+                          </button>
+                      </div>
+                    </div>
+
+                    <div className="space-y-4">
+                      <div>
+                        <h4 className="font-semibold text-gray-900 mb-2">Items</h4>
+                        <div className="space-y-3">
+                          {Array.isArray(selectedOrder.items) && selectedOrder.items.length > 0 ? (
+                            selectedOrder.items.map((it: any, idx: number) => (
+                              <div key={idx} className="flex items-center justify-between">
+                                <div>
+                                  <div className="text-sm font-medium text-gray-900">{typeof it === 'string' ? it : it.name ?? 'Item'}</div>
+                                  {typeof it !== 'string' && it.facility && <div className="text-xs text-gray-500">{it.facility}</div>}
+                                </div>
+                                <div className="text-sm text-gray-700">Qty: {it.quantity ?? 1} • ₱{(((it.price ?? 0) * (it.quantity ?? 1))).toFixed(2)}</div>
+                              </div>
+                            ))
+                          ) : (
+                            <p className="text-sm text-gray-500">No item details available.</p>
+                          )}
+                        </div>
+                      </div>
+
+                      <div>
+                        <h4 className="font-semibold text-gray-900 mb-2">Shipping</h4>
+                        {selectedOrder.shippingInfo ? (
+                          Array.isArray(selectedOrder.shippingInfo) ? (
+                            <div className="space-y-3 text-sm text-gray-700">
+                              {selectedOrder.shippingInfo.map((s: any, idx: number) => {
+                                const sh = normalizeShipping(s);
+                                if (!sh) return null;
+                                return (
+                                  <div key={idx}>
+                                    <p className="text-sm font-medium text-gray-800">Recipient {idx + 1}</p>
+                                    <p className="font-medium">{sh.fullName}</p>
+                                    <p>{sh.streetAddress}</p>
+                                    <p>{sh.city ? sh.city + (sh.province ? ', ' + sh.province : '') : ''} {sh.zipCode}</p>
+                                    <p className="text-xs text-gray-500 mt-1">{sh.phoneNumber} • {sh.email}</p>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          ) : (
+                            (() => {
+                              const sh = normalizeShipping(selectedOrder.shippingInfo);
+                              if (!sh) return <p className="text-sm text-gray-500">No shipping information available.</p>;
+                              return (
+                                <div className="text-sm text-gray-700">
+                                  <p className="font-medium">{sh.fullName}</p>
+                                  <p>{sh.streetAddress}</p>
+                                  <p>{sh.city ?? ''}{sh.province ? ', ' + sh.province : ''} {sh.zipCode ?? ''}</p>
+                                  <p className="text-xs text-gray-500 mt-1">{sh.phoneNumber} • {sh.email}</p>
+                                </div>
+                              );
+                            })()
+                          )
+                        ) : (
+                          <p className="text-sm text-gray-500">No shipping information available.</p>
+                        )}
+                      </div>
+
+                      <div className="pt-4 border-t">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm text-gray-600">Subtotal</span>
+                          <span className="font-medium">₱{(selectedOrder.subtotal ?? selectedOrder.total ?? 0).toFixed(2)}</span>
+                        </div>
+                        <div className="flex items-center justify-between mt-2">
+                          <span className="text-sm text-gray-600">Shipping</span>
+                          <span className="font-medium">₱{(selectedOrder.shippingCost ?? 0).toFixed(2)}</span>
+                        </div>
+                        <div className="flex items-center justify-between mt-4">
+                          <span className="text-base font-bold">Total</span>
+                          <span className="text-base font-bold">₱{(selectedOrder.total ?? 0).toFixed(2)}</span>
+                        </div>
+                      </div>
+
+                    </div>
+                  </div>
+                </div>
               </div>
             )}
 

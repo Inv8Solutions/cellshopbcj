@@ -1,85 +1,142 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, Minus, Plus, Trash2, Tag, ArrowRight } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { collection, onSnapshot, updateDoc, deleteDoc, doc, getDoc, Timestamp } from 'firebase/firestore';
+import { getAuth, onAuthStateChanged } from 'firebase/auth';
+import { db } from '@/firebase/config';
 
 interface CartItem {
-  id: number;
+  id: string;
+  productId: string;
   name: string;
-  category: string;
+  category?: string;
   price: number;
   quantity: number;
-  stock: string;
   image: string;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
 }
 
 export default function CartPage() {
   const [promoCode, setPromoCode] = useState('');
-  const [cartItems, setCartItems] = useState<CartItem[]>([
-    {
-      id: 1,
-      name: 'Handcrafted Bamboo Mug',
-      category: 'Woodcrafts',
-      price: 150.00,
-      quantity: 2,
-      stock: 'In Stock',
-      image: '/products/bamboo-mug.jpg'
-    },
-    {
-      id: 2,
-      name: 'Woven Laundry Basket',
-      category: 'Bags & Purses',
-      price: 350.00,
-      quantity: 1,
-      stock: 'In Stock',
-      image: '/products/woven-basket.jpg'
-    },
-    {
-      id: 3,
-      name: 'Wooden Desk Organizer',
-      category: 'Woodcrafts',
-      price: 450.00,
-      quantity: 1,
-      stock: 'In Stock',
-      image: '/products/desk-organizer.jpg'
-    },
-  ]);
+  const [cartItems, setCartItems] = useState<CartItem[]>([]);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [loading, setLoading] = useState(true);
+  const [currentUser, setCurrentUser] = useState<{ uid: string; email: string } | null>(null);
+  const router = useRouter();
 
-  const updateQuantity = (id: number, delta: number) => {
-    setCartItems(items =>
-      items.map(item =>
-        item.id === id
-          ? { ...item, quantity: Math.max(1, item.quantity + delta) }
-          : item
-      )
-    );
+  // Authentication effect
+  useEffect(() => {
+    const auth = getAuth();
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        setCurrentUser({ uid: user.uid, email: user.email || 'Customer' });
+      } else {
+        setCurrentUser(null);
+        router.push('/login');
+      }
+    });
+
+    return () => unsubscribe();
+  }, [router]);
+
+  // Cart subscription effect
+  useEffect(() => {
+    if (!currentUser) return;
+    const userCartRef = collection(db, 'users', currentUser.uid, 'cart');
+
+    const unsubscribe = onSnapshot(userCartRef, (snapshot) => {
+      const items: CartItem[] = [];
+      snapshot.forEach((docSnap) => {
+        const data = docSnap.data() as any;
+        items.push({ id: docSnap.id, ...data } as CartItem);
+      });
+
+      // Try to sort by createdAt client-side if present (descending)
+      items.sort((a, b) => {
+        const aTs = (a.createdAt && typeof (a.createdAt as any).toMillis === 'function') ? (a.createdAt as any).toMillis() : 0;
+        const bTs = (b.createdAt && typeof (b.createdAt as any).toMillis === 'function') ? (b.createdAt as any).toMillis() : 0;
+        return bTs - aTs;
+      });
+
+  console.debug('Cart snapshot size:', snapshot.size, 'items:', items.length);
+  setCartItems(items);
+  // initialize selection to all items currently in cart
+  setSelectedIds(new Set(items.map((it) => it.id)));
+      setLoading(false);
+    }, (error) => {
+      console.error('Error fetching cart:', error);
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, [currentUser]);
+
+  const updateQuantity = async (id: string, delta: number) => {
+    if (!currentUser) return;
+
+    try {
+      const itemRef = doc(db, 'users', currentUser.uid, 'cart', id);
+      const itemSnap = await getDoc(itemRef);
+      
+      if (!itemSnap.exists()) {
+        console.error('Cart item not found');
+        return;
+      }
+
+      const currentQuantity = itemSnap.data().quantity || 0;
+      const newQuantity = Math.max(1, currentQuantity + delta);
+
+      await updateDoc(itemRef, {
+        quantity: newQuantity,
+        updatedAt: new Date()
+      });
+    } catch (error) {
+      console.error('Error updating quantity:', error);
+      alert('Failed to update quantity. Please try again.');
+    }
   };
 
-  const removeItem = (id: number) => {
-    setCartItems(items => items.filter(item => item.id !== id));
+  const removeItem = async (id: string) => {
+    if (!currentUser) return;
+
+    try {
+      await deleteDoc(doc(db, 'users', currentUser.uid, 'cart', id));
+    } catch (error) {
+      console.error('Error removing item:', error);
+      alert('Failed to remove item. Please try again.');
+    }
   };
 
   const applyPromoCode = () => {
+    // Promo code logic to be implemented
     console.log('Applying promo code:', promoCode);
-    // Add promo code logic here
+    alert('Promo code feature coming soon!');
   };
 
   const subtotal = cartItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
   const shipping = 0; // FREE
   const total = subtotal + shipping;
 
+  // Selected items and totals (reflects only selected items)
+  const selectedItems = cartItems.filter((item) => selectedIds.has(item.id));
+  const selectedSubtotal = selectedItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+  const selectedTotal = selectedSubtotal + shipping;
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
       <header className="bg-white border-b border-gray-200 px-6 lg:px-12 py-4">
-        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-4">
           <Link href="/products" className="p-2 hover:bg-gray-100 rounded-full transition-colors">
             <ArrowLeft className="w-5 h-5" />
           </Link>
           <div>
             <h1 className="text-xl font-bold text-gray-900">Shopping Cart</h1>
-            <p className="text-sm text-gray-600">{cartItems.length} items</p>
+            <p className="text-sm text-gray-600">{selectedItems.length} of {cartItems.length} items selected</p>
           </div>
         </div>
       </header>
@@ -87,12 +144,33 @@ export default function CartPage() {
       {/* Main Content */}
       <main className="px-6 lg:px-12 py-8">
         <div className="max-w-7xl mx-auto">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {loading ? (
+            <div className="text-center py-12">
+              <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-gray-900 border-r-transparent motion-reduce:animate-[spin_1.5s_linear_infinite]" />
+              <p className="mt-4 text-gray-600">Loading your cart...</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
             {/* Left: Cart Items */}
             <div className="lg:col-span-2 space-y-4">
               {cartItems.map((item) => (
                 <div key={item.id} className="bg-white rounded-2xl p-6 shadow-sm">
                   <div className="flex gap-4">
+                    {/* Selection Checkbox */}
+                    <div className="flex items-start pt-1">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(item.id)}
+                        onChange={() => {
+                          const next = new Set(selectedIds);
+                          if (next.has(item.id)) next.delete(item.id);
+                          else next.add(item.id);
+                          setSelectedIds(next);
+                        }}
+                        className="w-4 h-4 text-gray-900 rounded border-gray-300"
+                        aria-label={`Select ${item.name}`}
+                      />
+                    </div>
                     {/* Product Image */}
                     <div className="relative w-24 h-24 rounded-xl overflow-hidden bg-gray-200 shrink-0">
                       <div className="absolute inset-0 bg-gray-300 flex items-center justify-center">
@@ -104,11 +182,11 @@ export default function CartPage() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-start justify-between gap-4 mb-2">
                         <div className="flex-1 min-w-0">
-                          <p className="text-xs text-gray-500 mb-1">{item.category}</p>
+                  <p className="text-xs text-gray-500 mb-1">{item.category}</p>
                           <h3 className="text-base font-bold text-gray-900 mb-1">
                             {item.name}
                           </h3>
-                          <p className="text-xs text-green-600 font-medium">{item.stock}</p>
+                          <p className="text-xs text-green-600 font-medium">In Stock</p>
                         </div>
                         
                         {/* Remove Button */}
@@ -200,8 +278,8 @@ export default function CartPage() {
 
                   <div className="space-y-3 mb-4">
                     <div className="flex items-center justify-between text-sm">
-                      <span className="text-gray-600">Subtotal ({cartItems.length} items)</span>
-                      <span className="font-medium text-gray-900">₱{subtotal.toFixed(2)}</span>
+                      <span className="text-gray-600">Subtotal ({selectedItems.length} items)</span>
+                      <span className="font-medium text-gray-900">₱{selectedSubtotal.toFixed(2)}</span>
                     </div>
                     <div className="flex items-center justify-between text-sm">
                       <span className="text-gray-600">Shipping</span>
@@ -216,13 +294,44 @@ export default function CartPage() {
                     </div>
                   </div>
 
-                  <Link
-                    href="/checkout"
-                    className="w-full bg-gray-900 text-white py-4 rounded-full font-medium hover:bg-gray-800 transition-colors flex items-center justify-center gap-2"
+                  <button
+                    onClick={() => {
+                      // proceed to checkout with selected items
+                      if (!currentUser) {
+                        router.push('/login');
+                        return;
+                      }
+
+                      if (selectedItems.length === 0) {
+                        alert('Please select at least one item to proceed to checkout.');
+                        return;
+                      }
+
+                      try {
+                        // Prepare lightweight payload for checkout (plain JS objects)
+                        const payload = selectedItems.map((it) => ({
+                          id: it.id,
+                          productId: it.productId,
+                          name: it.name,
+                          price: it.price,
+                          quantity: it.quantity,
+                          image: it.image,
+                          category: it.category || null
+                        }));
+                        localStorage.setItem('checkout_items', JSON.stringify(payload));
+                        localStorage.setItem('checkout_total', JSON.stringify(selectedTotal));
+                        router.push('/checkout');
+                      } catch (err) {
+                        console.error('Error preparing checkout:', err);
+                        alert('Failed to start checkout. Please try again.');
+                      }
+                    }}
+                    className={`w-full ${selectedItems.length === 0 ? 'bg-gray-300 text-gray-600 cursor-not-allowed' : 'bg-gray-900 text-white hover:bg-gray-800'} py-4 rounded-full font-medium transition-colors flex items-center justify-center gap-2`}
+                    disabled={selectedItems.length === 0}
                   >
                     Proceed to Checkout
                     <ArrowRight className="w-5 h-5" />
-                  </Link>
+                  </button>
 
                   <div className="space-y-2 text-sm text-gray-600 mt-6">
                     <div className="flex items-start gap-2">
@@ -242,6 +351,7 @@ export default function CartPage() {
               </div>
             </div>
           </div>
+          )}
         </div>
       </main>
     </div>

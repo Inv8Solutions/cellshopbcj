@@ -1,37 +1,187 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { ArrowLeft, CheckCircle, ArrowRight } from 'lucide-react';
+import { db, auth } from '@/firebase/config';
+import { collection, addDoc, doc, setDoc, serverTimestamp, getDocs, query, where, deleteDoc } from 'firebase/firestore';
+
+interface CheckoutItem {
+  id: string | number;
+  productId?: string | number;
+  name: string;
+  price: number;
+  quantity: number;
+  image?: string;
+  category?: string | null;
+}
+
+interface ShippingInfo {
+  fullName: string;
+  phoneNumber: string;
+  email: string;
+  streetAddress: string;
+  city: string;
+  province: string;
+  zipCode: string;
+  deliveryNotes?: string;
+}
 
 export default function ReviewPage() {
-  // Mock data - in a real app, this would come from state management or API
-  const shippingInfo = {
-    name: 'Juan',
-    fullName: 'Juan Dela Cruz',
-    email: 'sample@example.com',
-    address: 'Legarda, Baguio City, Benguet 2600'
-  };
+  const router = useRouter();
+  const [loading, setLoading] = useState(true);
+  
+  // State for all checkout data
+  const [shippingInfo, setShippingInfo] = useState<ShippingInfo | null>(null);
+  const [paymentInfo, setPaymentInfo] = useState<{
+    method: string;
+    shippingMethod: string;
+  } | null>(null);
+  const [orderItems, setOrderItems] = useState<CheckoutItem[]>([]);
 
-  const paymentInfo = {
-    method: 'Cash on Delivery',
-    shippingMethod: 'Standard (3-5 days)'
-  };
+  useEffect(() => {
+    try {
+      // Get shipping info
+      const rawShipping = localStorage.getItem('checkout_shipping');
+      if (rawShipping) {
+        setShippingInfo(JSON.parse(rawShipping));
+      } else {
+        router.push('/checkout');
+        return;
+      }
 
-  const orderItems = [
-    { id: 1, name: 'Handcrafted Bamboo Mug', quantity: 2, price: 150.00, total: 300.00 },
-    { id: 2, name: 'Woven Laundry Basket', quantity: 1, price: 350.00, total: 350.00 },
-    { id: 3, name: 'Wooden Desk Organizer', quantity: 1, price: 450.00, total: 450.00 },
-  ];
+      // Get payment info
+      const rawPayment = localStorage.getItem('checkout_payment');
+      if (rawPayment) {
+        setPaymentInfo(JSON.parse(rawPayment));
+      } else {
+        router.push('/checkout/payment');
+        return;
+      }
 
-  const subtotal = orderItems.reduce((sum, item) => sum + item.total, 0);
-  const shipping = 0; // FREE
+      // Get order items
+      const rawItems = localStorage.getItem('checkout_items');
+      if (rawItems) {
+        setOrderItems(JSON.parse(rawItems));
+      } else {
+        router.push('/cart');
+        return;
+      }
+
+      setLoading(false);
+    } catch (err) {
+      console.error('Error loading checkout data:', err);
+      router.push('/cart');
+    }
+  }, [router]);
+
+  const subtotal = orderItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+  const shipping = paymentInfo?.shippingMethod === 'express' ? 100 : 0;
   const total = subtotal + shipping;
 
-  const handleConfirmOrder = () => {
-    console.log('Order confirmed!');
-    // In a real app, this would submit the order to the backend
-    window.location.href = '/checkout/success';
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <div className="w-16 h-16 border-4 border-gray-900 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading order details...</p>
+        </div>
+      </div>
+    );
+  }
+
+  const handleConfirmOrder = async () => {
+      const user = auth.currentUser;
+      if (!user) {
+        alert('Please sign in to complete your order');
+        router.push('/login');
+        return;
+      }
+
+      // Show loading state
+      setLoading(true);
+
+      // Prepare order data
+      const orderData = {
+        userId: user.uid,
+        userEmail: user.email,
+        items: orderItems,
+        shippingInfo,
+        paymentInfo,
+        subtotal,
+        shippingCost: shipping,
+        total,
+        status: 'pending',
+        createdAt: serverTimestamp()
+      };
+
+      try {
+        // Create a new order document in the orders collection
+        const ordersRef = collection(db, 'orders');
+        const newOrderRef = await addDoc(ordersRef, orderData);
+        const orderId = newOrderRef.id;
+
+        // Add the order to user's orders subcollection
+        const userOrderRef = doc(db, 'users', user.uid, 'orders', orderId);
+        await setDoc(userOrderRef, {
+          ...orderData,
+          orderId
+        });
+
+        // Remove checked out items from the user's Firestore cart
+        try {
+          const userCartRef = collection(db, 'users', user.uid, 'cart');
+          for (const item of orderItems) {
+            // Only try to remove items that have a productId (items from DB)
+            const pid = (item as any).productId ?? (item as any).id ?? null;
+            if (!pid) continue;
+
+            const cartQuery = query(userCartRef, where('productId', '==', pid));
+            const cartSnapshot = await getDocs(cartQuery);
+            for (const cartDoc of cartSnapshot.docs) {
+              try {
+                await deleteDoc(doc(userCartRef, cartDoc.id));
+              } catch (err) {
+                console.warn('Failed to delete cart doc', cartDoc.id, err);
+              }
+            }
+          }
+        } catch (err) {
+          console.warn('Error removing checked out items from cart:', err);
+        }
+
+        // Save a preview + id so the success page can show the order immediately
+        try {
+          const preview = {
+            orderId,
+            items: orderItems,
+            shippingInfo,
+            paymentInfo,
+            subtotal,
+            shippingCost: shipping,
+            total,
+            createdAt: new Date().toISOString()
+          };
+          localStorage.setItem('last_order_id', orderId);
+          localStorage.setItem('last_order_preview', JSON.stringify(preview));
+        } catch (e) {
+          console.warn('Could not save order preview to localStorage', e);
+        }
+
+        // Clear transient checkout keys
+        localStorage.removeItem('checkout_items');
+        localStorage.removeItem('checkout_total');
+        localStorage.removeItem('checkout_shipping');
+        localStorage.removeItem('checkout_payment');
+
+        // Redirect to success page with orderId so the page can fetch the exact document
+        window.location.href = `/checkout/success?orderId=${orderId}`;
+      } catch (error) {
+        console.error('Error submitting order:', error);
+        alert('There was an error submitting your order. Please try again.');
+        setLoading(false);
+      }
   };
 
   return (
@@ -101,11 +251,17 @@ export default function ReviewPage() {
                     Edit
                   </Link>
                 </div>
-                <div className="text-sm text-gray-700 space-y-1">
-                  <p className="font-semibold text-gray-900">{shippingInfo.name}</p>
-                  <p>{shippingInfo.fullName} • {shippingInfo.email}</p>
-                  <p>{shippingInfo.address}</p>
-                </div>
+                {shippingInfo && (
+                  <div className="text-sm text-gray-700 space-y-1">
+                    <p className="font-semibold text-gray-900">{shippingInfo.fullName}</p>
+                    <p>{shippingInfo.phoneNumber} • {shippingInfo.email}</p>
+                    <p>{shippingInfo.streetAddress}</p>
+                    <p>{shippingInfo.city}, {shippingInfo.province} {shippingInfo.zipCode}</p>
+                    {shippingInfo.deliveryNotes && (
+                      <p className="text-gray-500 italic">Note: {shippingInfo.deliveryNotes}</p>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Payment & Shipping Method */}
@@ -122,11 +278,11 @@ export default function ReviewPage() {
                 <div className="grid grid-cols-2 gap-6">
                   <div>
                     <p className="text-xs text-gray-500 mb-1">Payment Method</p>
-                    <p className="text-sm font-semibold text-gray-900">{paymentInfo.method}</p>
+                    <p className="text-sm font-semibold text-gray-900">{paymentInfo?.method}</p>
                   </div>
                   <div>
                     <p className="text-xs text-gray-500 mb-1">Shipping Method</p>
-                    <p className="text-sm font-semibold text-gray-900">{paymentInfo.shippingMethod}</p>
+                    <p className="text-sm font-semibold text-gray-900">{paymentInfo?.shippingMethod}</p>
                   </div>
                 </div>
               </div>
@@ -141,7 +297,7 @@ export default function ReviewPage() {
                         <p className="text-sm font-semibold text-gray-900">{item.name}</p>
                         <p className="text-xs text-gray-600 mt-0.5">Qty: {item.quantity}</p>
                       </div>
-                      <p className="text-sm font-bold text-gray-900">₱{item.total.toFixed(2)}</p>
+                      <p className="text-sm font-bold text-gray-900">₱{(item.price * item.quantity).toFixed(2)}</p>
                     </div>
                   ))}
                 </div>

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, ShoppingBag, CreditCard, CheckCircle, ArrowRight } from 'lucide-react';
 
@@ -16,16 +16,52 @@ export default function CheckoutPage() {
     deliveryNotes: '',
   });
 
-  // Mock cart data
-  const cartItems = [
-    { id: 1, name: 'Bamboo Mug', price: 120.00, quantity: 1 },
-    { id: 2, name: 'Woven Basket', price: 150.00, quantity: 1 },
-    { id: 3, name: 'Paper Journal', price: 180.00, quantity: 1 },
-  ];
+  interface CheckoutItem {
+    id: string | number;
+    productId?: string | number;
+    name: string;
+    price: number;
+    quantity: number;
+    image?: string;
+    category?: string | null;
+  }
 
-  const subtotal = cartItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+  const [cartItems, setCartItems] = useState<CheckoutItem[]>([]);
+  const [checkoutTotal, setCheckoutTotal] = useState<number | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    try {
+      // Load cart items and total
+      const raw = localStorage.getItem('checkout_items');
+      const rawTotal = localStorage.getItem('checkout_total');
+
+      if (raw) {
+        const parsed: CheckoutItem[] = JSON.parse(raw);
+        setCartItems(parsed);
+      }
+
+      if (rawTotal) {
+        const parsedTotal = JSON.parse(rawTotal);
+        setCheckoutTotal(Number(parsedTotal));
+      }
+
+      // Load previously saved shipping information if it exists
+      const savedShippingInfo = localStorage.getItem('checkout_shipping');
+      if (savedShippingInfo) {
+        const parsedShippingInfo = JSON.parse(savedShippingInfo);
+        setFormData(parsedShippingInfo);
+      }
+    } catch (err) {
+      console.error('Error loading checkout data from localStorage:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   const shipping = 0; // FREE
-  const total = subtotal + shipping;
+  const subtotal = cartItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+  const total = checkoutTotal !== null ? checkoutTotal : subtotal + shipping;
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     setFormData({
@@ -41,10 +77,16 @@ export default function CheckoutPage() {
       alert('Please fill in all required fields');
       return;
     }
-    
-    console.log('Form data:', formData);
-    // Navigate to payment page
-    window.location.href = '/checkout/payment';
+
+    try {
+      // Save shipping information to localStorage
+      localStorage.setItem('checkout_shipping', JSON.stringify(formData));
+      // Navigate to payment page
+      window.location.href = '/checkout/payment';
+    } catch (err) {
+      console.error('Error saving shipping information:', err);
+      alert('There was an error saving your shipping information. Please try again.');
+    }
   };
 
   return (

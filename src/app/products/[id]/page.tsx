@@ -2,7 +2,9 @@
 
 import { use, useState, useEffect } from 'react';
 import Link from 'next/link';
-import { doc, getDoc } from 'firebase/firestore';
+import { useRouter } from 'next/navigation';
+import { doc, getDoc, collection, onSnapshot, setDoc } from 'firebase/firestore';
+import { getAuth, onAuthStateChanged } from 'firebase/auth';
 import { db } from '@/firebase/config';
 import Navbar from '@/components/layout/Navbar';
 import Footer from '@/components/layout/Footer';
@@ -28,9 +30,29 @@ interface Product {
 
 export default function ProductDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params); // unwrap Promise safely
+  const router = useRouter();
   const [product, setProduct] = useState<Product | null>(null);
   const [quantity, setQuantity] = useState(1);
   const [selectedImage, setSelectedImage] = useState(0);
+  const [user, setUser] = useState<{ uid: string; email: string } | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+
+  // Authentication listener
+  useEffect(() => {
+    const auth = getAuth();
+    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+      if (firebaseUser) {
+        setUser({
+          uid: firebaseUser.uid,
+          email: firebaseUser.email || ''
+        });
+      } else {
+        setUser(null);
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
 
   // Fetch product data from Firestore
   useEffect(() => {
@@ -67,21 +89,95 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
     setQuantity(Math.max(1, Math.min(product.stock, quantity + delta)));
   };
 
-  const handleAddToCart = () => {
+  const handleAddToCart = async () => {
     if (!product) return;
-    console.log('Add to cart:', { product, quantity });
+    
+    if (!user) {
+      router.push('/login');
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const cartRef = doc(db, 'users', user.uid, 'cart', product.id);
+      
+      // Check if the item already exists in the cart
+      const cartItem = await getDoc(cartRef);
+      if (cartItem.exists()) {
+        alert('This item is already in your cart! You can update the quantity in the cart page.');
+        return;
+      }
+
+      // Add the new item to cart
+      await setDoc(cartRef, {
+        productId: product.id,
+        name: product.name,
+        price: product.price,
+        quantity: quantity,
+        image: product.images[0]
+      });
+      
+      // Show success alert
+      alert('Item added to cart successfully!');
+    } catch (error) {
+      console.error('Error adding to cart:', error);
+      alert('Failed to add item to cart. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const handleBuyNow = () => {
-    if (!product) return;
-    console.log('Buy now:', { product, quantity });
+  const handleBuyNow = async () => {
+    if (!product || !user) {
+      router.push('/login');
+      return;
+    }
+    
+    setIsLoading(true);
+    try {
+      // Check cart first
+      const cartRef = doc(db, 'users', user.uid, 'cart', product.id);
+      const cartItem = await getDoc(cartRef);
+      
+      // If item exists in cart, update its quantity instead of adding new
+      if (cartItem.exists()) {
+        await setDoc(cartRef, {
+          ...cartItem.data(),
+          quantity: quantity // Update with new quantity
+        });
+      } else {
+        // Add new item to cart
+        await setDoc(cartRef, {
+          productId: product.id,
+          name: product.name,
+          price: product.price,
+          quantity: quantity,
+          image: product.images[0]
+        });
+      }
+      
+      // Redirect to checkout
+      router.push('/checkout');
+    } catch (error) {
+      console.error('Error during buy now process:', error);
+      alert('Failed to process your order. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  if (!product) return <div className="min-h-screen flex items-center justify-center">Loading product...</div>;
+  if (!product) return (
+    <div className="min-h-screen flex items-center justify-center bg-white">
+      <div className="text-center">
+        <div className="w-16 h-16 border-4 border-gray-900 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+        <p className="text-gray-600">Loading product details...</p>
+      </div>
+    </div>
+  );
 
   return (
     <div className="min-h-screen flex flex-col bg-white">
-      <Navbar />
+      <Navbar currentUser={user} />
       <main className="grow pt-16">
         <div className="w-full px-6 lg:px-12 py-8">
           {/* Breadcrumb */}
@@ -187,16 +283,29 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
               <div className="space-y-3">
                 <button
                   onClick={handleAddToCart}
-                  className="w-full bg-gray-900 text-white py-4 rounded-full font-medium hover:bg-gray-800 transition-colors flex items-center justify-center gap-2"
+                  disabled={isLoading}
+                  className="w-full bg-gray-900 text-white py-4 rounded-full font-medium hover:bg-gray-800 transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  <ShoppingCart className="w-5 h-5" />
-                  Add to Cart
+                  {isLoading ? (
+                    <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  ) : (
+                    <ShoppingCart className="w-5 h-5" />
+                  )}
+                  {isLoading ? 'Adding to Cart...' : 'Add to Cart'}
                 </button>
                 <button
                   onClick={handleBuyNow}
-                  className="w-full bg-white text-gray-900 py-4 rounded-full font-medium border-2 border-gray-900 hover:bg-gray-50 transition-colors"
+                  disabled={isLoading}
+                  className="w-full bg-white text-gray-900 py-4 rounded-full font-medium border-2 border-gray-900 hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed relative"
                 >
-                  Buy Now
+                  {isLoading ? (
+                    <>
+                      <div className="w-5 h-5 border-2 border-gray-900 border-t-transparent rounded-full animate-spin absolute left-1/2 -ml-2.5" />
+                      <span className="opacity-0">Buy Now</span>
+                    </>
+                  ) : (
+                    'Buy Now'
+                  )}
                 </button>
               </div>
 

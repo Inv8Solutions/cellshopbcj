@@ -3,11 +3,24 @@
 import Navbar from '@/components/layout/Navbar';
 import Footer from '@/components/layout/Footer';
 import ContactSection from '@/components/home/ContactSection';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, JSX } from 'react';
 import { ShoppingBag, ChevronDown } from 'lucide-react';
 import Link from 'next/link';
-import { collection, getDocs, query, where, orderBy, QueryConstraint } from 'firebase/firestore';
+import { 
+  collection, 
+  getDocs, 
+  query, 
+  where, 
+  orderBy, 
+  QueryConstraint,
+  addDoc,
+  updateDoc,
+  doc,
+  serverTimestamp
+} from 'firebase/firestore';
+import { getAuth, onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
 import { db } from '@/firebase/config';
+import { useRouter } from 'next/navigation';
 
 // ------------------------------
 // Product Type Definition
@@ -19,19 +32,26 @@ interface Product {
   image: string;
   category: string;
   facility: string;
-  createdAt: any; // Firestore timestamp
+  createdAt: any | null; // Firestore timestamp or null
 }
 
-export default function ProductsPage() {
+interface NavbarProps {
+  currentUser: { uid: string; email: string; } | null;
+}
+
+export default function ProductsPage(): JSX.Element {
   // ------------------------------
-  // State
+  // Hooks & State
   // ------------------------------
+  const router = useRouter();
+  
   const [priceRange, setPriceRange] = useState<[number, number]>([0, 100000]);
   const [selectedCategory, setSelectedCategory] = useState<string>(''); // single selection
   const [selectedFacility, setSelectedFacility] = useState<string>(''); // single selection
   const [sortBy, setSortBy] = useState<'featured' | 'price-low' | 'price-high' | 'newest'>('featured');
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
+  const [currentUser, setCurrentUser] = useState<{ uid: string; email: string } | null>(null);
 
   const categories = [
     'Bags & Purses',
@@ -48,6 +68,23 @@ export default function ProductsPage() {
     'Benguet Provincial Jail',
     'Tagudin Municipal Jail'
   ];
+
+  // ------------------------------
+  // Keep user session alive
+  // ------------------------------
+  useEffect(() => {
+    // call getAuth inside effect to avoid referencing auth on module init (better for client-only runtime)
+    const auth = getAuth();
+    const unsubscribe = onAuthStateChanged(auth, (user: FirebaseUser | null) => {
+      if (user) {
+        setCurrentUser({ uid: user.uid, email: user.email || 'Customer' });
+      } else {
+        setCurrentUser(null);
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
 
   // ------------------------------
   // Fetch products from Firestore
@@ -96,14 +133,65 @@ export default function ProductsPage() {
     };
 
     fetchProducts();
-  }, [selectedCategory, selectedFacility, priceRange, sortBy]);
+    // explicitly list primitive deps (avoid array reference equality)
+  }, [selectedCategory, selectedFacility, priceRange[0], priceRange[1], sortBy]);
+
+  // ------------------------------
+  // Handlers
+  // ------------------------------
+  const handleAddToCart = async (product: Product) => {
+    if (!currentUser) {
+      // Redirect to login if not authenticated
+      router.push('/login');
+      return;
+    }
+
+    try {
+      const userCartRef = collection(db, 'users', currentUser.uid, 'cart');
+      
+      // Check if product already exists in cart
+      const existingItemQuery = query(userCartRef, where('productId', '==', product.id));
+      const existingItemSnapshot = await getDocs(existingItemQuery);
+
+      if (!existingItemSnapshot.empty) {
+        // Product exists, update quantity
+        const existingItem = existingItemSnapshot.docs[0];
+        const currentQuantity = existingItem.data().quantity || 1;
+        
+        await updateDoc(doc(userCartRef, existingItem.id), {
+          quantity: currentQuantity + 1,
+          updatedAt: serverTimestamp()
+        });
+      } else {
+        // Add new product to cart
+        await addDoc(userCartRef, {
+          productId: product.id,
+          name: product.name,
+          price: product.price,
+          image: product.image,
+          quantity: 1,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp()
+        });
+      }
+
+      // Show success message (you can replace this with a toast notification)
+      alert('Product added to cart!');
+      
+    } catch (error) {
+      console.error('Error adding to cart:', error);
+      alert('Failed to add product to cart. Please try again.');
+    }
+  };
 
   // ------------------------------
   // JSX Rendering
   // ------------------------------
   return (
     <div className="min-h-screen flex flex-col bg-white">
-      <Navbar />
+      {/* Navbar with currentUser */}
+      <Navbar currentUser={currentUser} />
+
       <main className="grow pt-16">
         <div className="w-full px-6 lg:px-12 py-8">
           {/* Breadcrumb */}
@@ -132,7 +220,7 @@ export default function ProductsPage() {
                   min="0"
                   max="100000"
                   value={priceRange[1]}
-                  onChange={(e) => setPriceRange([priceRange[0], parseInt(e.target.value)])}
+                  onChange={(e) => setPriceRange([priceRange[0], parseInt(e.target.value, 10)])}
                   className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-black mb-2"
                 />
                 <div className="flex justify-between text-sm text-gray-600">
@@ -236,10 +324,7 @@ export default function ProductsPage() {
                         <button
                           className="shrink-0 w-9 h-9 rounded-full border-2 border-gray-900 flex items-center justify-center hover:bg-gray-900 hover:text-white transition-all"
                           aria-label={`Add ${product.name} to cart`}
-                          onClick={(e) => {
-                            e.preventDefault();
-                            console.log('Add to cart:', product);
-                          }}
+                          onClick={() => handleAddToCart(product)}
                         >
                           <ShoppingBag className="h-4 w-4" />
                         </button>
