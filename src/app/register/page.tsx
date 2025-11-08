@@ -4,6 +4,9 @@ import Link from 'next/link';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft } from 'lucide-react';
+import { getAuth, createUserWithEmailAndPassword, setPersistence, browserLocalPersistence, browserSessionPersistence, GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
+import { doc, setDoc } from 'firebase/firestore';
+import { auth, db } from '@/firebase/config';
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -12,34 +15,91 @@ export default function RegisterPage() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [agreeToTerms, setAgreeToTerms] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    // Validation
-    if (password !== confirmPassword) {
-      alert('Passwords do not match!');
-      return;
-    }
-    
-    if (!agreeToTerms) {
-      alert('Please agree to the Terms of Service and Privacy Policy');
-      return;
-    }
-    
-    // Registration functionality will be implemented later
-    console.log('Registration submitted:', { email, password, agreeToTerms });
-    
-    // Redirect to profile page after registration
-    router.push('/profile');
-  };
+  const handleSubmit = async (e: React.FormEvent) => {
+  e.preventDefault();
 
-  const handleGoogleSignup = () => {
-    // Google signup functionality will be implemented later
-    console.log('Google signup clicked');
-    
-    // Redirect to profile page after Google signup
+  // -------------------------
+  // 🧩 Validation
+  // -------------------------
+  if (password !== confirmPassword) {
+    alert('Passwords do not match!');
+    return;
+  }
+
+  if (!agreeToTerms) {
+    alert('Please agree to the Terms of Service and Privacy Policy');
+    return;
+  }
+
+  try {
+    // [ADDED] Initialize Firebase Auth
+    const auth = getAuth();
+
+    // [ADDED] Create new user in Firebase Authentication
+    const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+    const user = userCredential.user;
+
+    // [ADDED] Store user info in Firestore
+    const userRef = doc(db, 'users', user.uid);
+    await setDoc(userRef, {
+      email: user.email,
+      uid: user.uid,
+      createdAt: new Date().toISOString(),
+      agreeToTerms,
+    });
+
+    console.log('✅ Registration successful:', user);
+
+    // [ADDED] Redirect to profile page after registration
     router.push('/profile');
-  };
+
+  } catch (error: any) {
+    // [ADDED] Error Handling
+    console.error('❌ Registration error:', error);
+    alert(`Registration failed: ${error.message}`);
+  }
+};
+
+  const handleGoogleSignup = async () => {
+  // [ADDED] Loading and error state handling (optional)
+  setLoading(true);
+  setError('');
+
+  // [ADDED] Initialize Google provider
+  const provider = new GoogleAuthProvider();
+
+  try {
+
+    // [ADDED] Sign in with Google popup
+    const result = await signInWithPopup(auth, provider);
+    const user = result.user;
+
+    // [ADDED] Create or merge user data in Firestore
+    const userRef = doc(db, 'users', user.uid);
+    await setDoc(
+      userRef,
+      {
+        email: user.email,
+        name: user.displayName,
+        photoURL: user.photoURL,
+        createdAt: new Date().toISOString(),
+        provider: 'google',
+      },
+      { merge: true }
+    );
+
+    console.log('✅ Google signup successful:', user);
+
+    // [ADDED] Redirect to profile page after successful signup
+    router.push('/profile');
+  } catch (error: any) {
+    console.error('❌ Google signup error:', error);
+    setError('Google signup failed. Please try again.');
+  } finally {
+    // [ADDED] Stop loading state
+    setLoading(false);
+  }
+};
 
   return (
     <div className="min-h-screen flex flex-col bg-white">
@@ -194,3 +254,11 @@ export default function RegisterPage() {
     </div>
   );
 }
+function setError(arg0: string) {
+  throw new Error('Function not implemented.');
+}
+
+function setLoading(arg0: boolean) {
+  throw new Error('Function not implemented.');
+}
+
