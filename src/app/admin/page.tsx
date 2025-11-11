@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   LayoutDashboard,
   Package,
@@ -24,6 +24,8 @@ import {
   Eye,
   Clock
 } from 'lucide-react';
+import { db } from '@/firebase/config';
+import { collection, getDocs, getCountFromServer, query, orderBy, limit } from 'firebase/firestore';
 
 interface Product {
   id: string;
@@ -69,18 +71,142 @@ export default function AdminDashboard() {
     { id: 'settings', label: 'Settings', icon: Settings },
   ];
 
+  // Live stats (loaded from Firestore)
+  const [loadingStats, setLoadingStats] = useState(true);
+  const [totalRevenue, setTotalRevenue] = useState<number | null>(null);
+  const [totalOrdersCount, setTotalOrdersCount] = useState<number | null>(null);
+  const [totalProductsCount, setTotalProductsCount] = useState<number | null>(null);
+  const [totalReviewsCount, setTotalReviewsCount] = useState<number | null>(null);
+
+  const formatCurrency = (n: number | null) => {
+    if (n === null) return '—';
+    return `₱${n.toLocaleString()}`;
+  };
+
+  useEffect(() => {
+    let mounted = true;
+
+    const fetchStats = async () => {
+      try {
+        // Counts using getCountFromServer for efficiency
+        const ordersCountSnap = await getCountFromServer(collection(db, 'orders'));
+        const ordersCount = ordersCountSnap.data().count ?? 0;
+
+        const itemsCountSnap = await getCountFromServer(collection(db, 'items'));
+        const itemsCount = itemsCountSnap.data().count ?? 0;
+
+        // reviews collection may not exist in this project; attempt to count and fallback to 0
+        let reviewsCount = 0;
+        try {
+          const reviewsCountSnap = await getCountFromServer(collection(db, 'reviews'));
+          reviewsCount = reviewsCountSnap.data().count ?? 0;
+        } catch (err) {
+          reviewsCount = 0;
+        }
+
+        // Sum revenue from orders collection. Orders are expected to have a numeric `total` field.
+        let revenue = 0;
+        const ordersSnap = await getDocs(collection(db, 'orders'));
+        ordersSnap.forEach((d) => {
+          const data = d.data() as any;
+          const val = data.total ?? data.totalAmount ?? data.subtotal ?? 0;
+          const num = typeof val === 'number' ? val : Number(val) || 0;
+          revenue += num;
+        });
+
+        // Fetch recent orders (limit 5) ordered by createdAt if available
+        try {
+          const recentQ = query(collection(db, 'orders'), orderBy('createdAt', 'desc'), limit(5));
+          const recentSnap = await getDocs(recentQ);
+          const recs = recentSnap.docs.map((d) => {
+            const data = d.data() as any;
+            const id = data.orderId ?? d.id;
+            const status = typeof data.status === 'string' ? data.status : (data.state ?? 'Placed');
+            const itemsDesc = Array.isArray(data.items)
+              ? `${data.items.length} items`
+              : (typeof data.items === 'string' ? data.items : JSON.stringify(data.items ?? ''));
+            const createdAt = data.createdAt && typeof data.createdAt.toDate === 'function'
+              ? data.createdAt.toDate().toLocaleString()
+              : (data.createdAt ?? '');
+            const amountStr = typeof data.total === 'number'
+              ? `₱${data.total.toLocaleString()}`
+              : (data.total ?? data.totalAmount ?? data.subtotal ?? '₱0.00');
+            return {
+              id,
+              status,
+              items: itemsDesc,
+              date: createdAt,
+              amount: amountStr
+            };
+          });
+          if (mounted) setRecentOrders(recs);
+        } catch (err) {
+          // fallback: leave static recentOrders
+          console.warn('Could not fetch recent orders:', err);
+        }
+
+        // Fetch top products from `items` collection, sort by `sold`/`sales` field
+        try {
+          const itemsSnap = await getDocs(collection(db, 'items'));
+          const itemsArr = itemsSnap.docs.map((d) => {
+            const data = d.data() as any;
+            // Prefer explicit name fields; fall back to common alternatives then to doc id
+            const name = data.name ?? data.title ?? data.productName ?? d.id;
+            const facility = data.facility ?? data.location ?? data.origin ?? 'Unknown';
+            const sold = typeof data.sold === 'number'
+              ? data.sold
+              : (Number(data.sold) || Number(data.sales) || Number(data.unitsSold) || 0);
+
+            // Normalize price: handle number, string with currency symbol, or text field
+            let price = '₱0.00';
+            if (typeof data.price === 'number') {
+              price = `₱${data.price.toLocaleString()}`;
+            } else if (typeof data.price === 'string') {
+              const numeric = Number(data.price.replace(/[^0-9.-]+/g, '')) || 0;
+              price = `₱${numeric.toLocaleString()}`;
+            } else if (data.priceText) {
+              price = data.priceText;
+            }
+
+            return { name, facility, sold, price };
+          });
+          itemsArr.sort((a, b) => b.sold - a.sold);
+          const top = itemsArr.slice(0, 3);
+          if (mounted && top.length) setTopProducts(top);
+        } catch (err) {
+          console.warn('Could not fetch top products:', err);
+        }
+
+        if (!mounted) return;
+        setTotalOrdersCount(ordersCount);
+        setTotalProductsCount(itemsCount);
+        setTotalReviewsCount(reviewsCount);
+        setTotalRevenue(revenue);
+      } catch (err) {
+        console.error('Error fetching admin stats:', err);
+      } finally {
+        if (mounted) setLoadingStats(false);
+      }
+    };
+
+    fetchStats();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
   const stats = [
     {
       label: 'Total Revenue',
-      value: '₱125,480',
-      sublabel: 'Total Revenue this month',
+      value: formatCurrency(totalRevenue),
+      sublabel: 'Total revenue (all time)',
       icon: DollarSign,
       bgColor: 'bg-blue-50',
       iconColor: 'text-blue-600'
     },
     {
       label: 'Total Orders',
-      value: '1,248',
+      value: totalOrdersCount === null ? '—' : totalOrdersCount.toLocaleString(),
       sublabel: 'Total Orders',
       icon: ShoppingBag,
       bgColor: 'bg-green-50',
@@ -88,7 +214,7 @@ export default function AdminDashboard() {
     },
     {
       label: 'Total Product Listings',
-      value: '156',
+      value: totalProductsCount === null ? '—' : totalProductsCount.toLocaleString(),
       sublabel: 'Total Product Listings',
       icon: Package,
       bgColor: 'bg-purple-50',
@@ -96,7 +222,7 @@ export default function AdminDashboard() {
     },
     {
       label: 'Total Reviews',
-      value: '892',
+      value: totalReviewsCount === null ? '—' : totalReviewsCount.toLocaleString(),
       sublabel: 'Total Reviews',
       icon: Star,
       bgColor: 'bg-orange-50',
@@ -104,7 +230,8 @@ export default function AdminDashboard() {
     }
   ];
 
-  const recentOrders = [
+  // Recent orders (initial static fallback, replaced by Firestore data when available)
+  const [recentOrders, setRecentOrders] = useState<Array<{id: string; status: string; items: string; date: string; amount: string;}>>([
     {
       id: '#BJ-2024-166',
       status: 'Delivery',
@@ -126,13 +253,14 @@ export default function AdminDashboard() {
       date: 'Nov 8, 2024',
       amount: '₱180.00'
     }
-  ];
+  ]);
 
-  const topProducts = [
+  // Top products (initial static fallback, replaced by Firestore data when available)
+  const [topProducts, setTopProducts] = useState<Array<{name: string; facility: string; sold: number; price: string;}>>([
     { name: 'Bamboo Mug', facility: 'Baguio City Jail', sold: 89, price: '₱71,290' },
     { name: 'Bamboo Mug', facility: 'Baguio City Jail', sold: 89, price: '₱71,290' },
     { name: 'Bamboo Mug', facility: 'Baguio City Jail', sold: 89, price: '₱71,290' }
-  ];
+  ]);
 
   const categoryData = [
     { name: 'Home & Kitchen', percentage: 48, color: 'bg-gray-900' },
