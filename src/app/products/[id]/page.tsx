@@ -3,14 +3,17 @@
 import { use, useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { doc, getDoc, collection, onSnapshot, setDoc } from 'firebase/firestore';
-import { getAuth, onAuthStateChanged } from 'firebase/auth';
+import { doc, getDoc, collection, onSnapshot, setDoc, serverTimestamp, addDoc } from 'firebase/firestore';
+import { getAuth, onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
 import { db } from '@/firebase/config';
 import Navbar from '@/components/layout/Navbar';
 import Footer from '@/components/layout/Footer';
 import ContactSection from '@/components/home/ContactSection';
-import { Star, ShoppingCart, Minus, Plus } from 'lucide-react';
+import { Star, ShoppingCart, Minus, Plus, ChevronLeft } from 'lucide-react';
 
+// ------------------------------
+// Type Definitions
+// ------------------------------
 interface Specification {
   label: string;
   value: string;
@@ -23,31 +26,43 @@ interface Product {
   rating: number;
   description: string;
   category: string;
-  images: string[];
-  specifications: Specification[];
+  facility: string;
+  image: string;
+  images?: string[];
+  specifications?: Specification[];
   stock: number;
+  status: 'active' | 'inactive';
+  createdAt: any;
 }
 
+// ------------------------------
+// Main Component
+// -----------------------------
 export default function ProductDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = use(params); // unwrap Promise safely
   const router = useRouter();
+  const { id } = use(params);
+  
+  // State
   const [product, setProduct] = useState<Product | null>(null);
   const [quantity, setQuantity] = useState(1);
   const [selectedImage, setSelectedImage] = useState(0);
-  const [user, setUser] = useState<{ uid: string; email: string } | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
+  const [currentUser, setCurrentUser] = useState<{ uid: string; email: string } | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  // Authentication listener
+  // ------------------------------
+  // Authentication
+  // ------------------------------
   useEffect(() => {
     const auth = getAuth();
-    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+    const unsubscribe = onAuthStateChanged(auth, (firebaseUser: FirebaseUser | null) => {
       if (firebaseUser) {
-        setUser({
+        setCurrentUser({
           uid: firebaseUser.uid,
-          email: firebaseUser.email || ''
+          email: firebaseUser.email || 'Customer'
         });
       } else {
-        setUser(null);
+        setCurrentUser(null);
       }
     });
 
@@ -57,127 +72,164 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
   // Fetch product data from Firestore
   useEffect(() => {
     const fetchProduct = async () => {
+      if (!id) return;
+      
+      setLoading(true);
+      setError(null);
+      
       try {
         const docRef = doc(db, 'items', id);
         const docSnap = await getDoc(docRef);
+
         if (docSnap.exists()) {
           const data = docSnap.data();
-          // Ensure all required fields have fallback defaults
           setProduct({
             id: docSnap.id,
-            name: data?.name || 'No Name',
-            price: typeof data?.price === 'number' ? data.price : 0,
-            rating: typeof data?.rating === 'number' ? data.rating : 0,
-            description: data?.description || 'No description available.',
-            category: data?.category || 'Uncategorized',
-            images: Array.isArray(data?.images) && data.images.length > 0 ? data.images : ['/products/placeholder.png'],
-            specifications: Array.isArray(data?.specifications) ? data.specifications : [],
-            stock: typeof data?.stock === 'number' ? data.stock : 0,
+            name: data.name || 'Unnamed Product',
+            price: Number(data.price) || 0,
+            rating: Number(data.rating) || 0,
+            description: data.description || 'No description available',
+            category: data.category || 'Uncategorized',
+            facility: data.facility || 'Unknown Facility',
+            image: data.image || '/placeholder.png',
+            images: data.images || [],
+            specifications: data.specifications || [],
+            stock: Number(data.stock) || 0,
+            status: data.status || 'active',
+            createdAt: data.createdAt || null
           });
+          
+          // Set first image as selected if available
+          if (data.images?.length) {
+            setSelectedImage(0);
+          }
         } else {
-          console.warn('Product not found in Firestore');
+          setError('Product not found');
+          console.log('No such document!');
         }
       } catch (error) {
         console.error('Error fetching product:', error);
+        setError('Failed to load product. Please try again.');
+      } finally {
+        setLoading(false);
       }
     };
     fetchProduct();
   }, [id]);
 
-  const handleQuantityChange = (delta: number) => {
-    if (!product) return;
-    setQuantity(Math.max(1, Math.min(product.stock, quantity + delta)));
-  };
-
+  // ------------------------------
+  // Event Handlers
+  // ------------------------------
   const handleAddToCart = async () => {
-    if (!product) return;
-    
-    if (!user) {
+    if (!currentUser) {
       router.push('/login');
       return;
     }
 
-    setIsLoading(true);
-    try {
-      const cartRef = doc(db, 'users', user.uid, 'cart', product.id);
-      
-      // Check if the item already exists in the cart
-      const cartItem = await getDoc(cartRef);
-      if (cartItem.exists()) {
-        alert('This item is already in your cart! You can update the quantity in the cart page.');
-        return;
-      }
+    if (!product) return;
 
-      // Add the new item to cart
-      await setDoc(cartRef, {
-        productId: product.id,
+    try {
+      setLoading(true);
+      
+      const cartItem = {
+        productId: id,
         name: product.name,
         price: product.price,
-        quantity: quantity,
-        image: product.images[0]
-      });
+        quantity,
+        image: product.images?.[0] || product.image,
+        addedAt: serverTimestamp()
+      };
+
+      const cartRef = collection(db, 'users', currentUser.uid, 'cart');
+      await addDoc(cartRef, cartItem);
       
-      // Show success alert
-      alert('Item added to cart successfully!');
+      // Show success message (you might want to replace this with a toast notification)
+      alert('Added to cart!');
     } catch (error) {
       console.error('Error adding to cart:', error);
-      alert('Failed to add item to cart. Please try again.');
+      setError('Failed to add to cart. Please try again.');
     } finally {
-      setIsLoading(false);
+      setLoading(false);
     }
   };
 
   const handleBuyNow = async () => {
-    if (!product || !user) {
+    if (!product || !currentUser) {
       router.push('/login');
       return;
     }
     
-    setIsLoading(true);
     try {
-      // Check cart first
-      const cartRef = doc(db, 'users', user.uid, 'cart', product.id);
-      const cartItem = await getDoc(cartRef);
+      setLoading(true);
       
-      // If item exists in cart, update its quantity instead of adding new
-      if (cartItem.exists()) {
-        await setDoc(cartRef, {
-          ...cartItem.data(),
-          quantity: quantity // Update with new quantity
-        });
-      } else {
-        // Add new item to cart
-        await setDoc(cartRef, {
-          productId: product.id,
-          name: product.name,
-          price: product.price,
-          quantity: quantity,
-          image: product.images[0]
-        });
-      }
+      const cartItem = {
+        productId: id,
+        name: product.name,
+        price: product.price,
+        quantity,
+        image: product.images?.[0] || product.image,
+        addedAt: serverTimestamp()
+      };
+
+      const cartRef = collection(db, 'users', currentUser.uid, 'cart');
+      await addDoc(cartRef, cartItem);
       
       // Redirect to checkout
       router.push('/checkout');
     } catch (error) {
       console.error('Error during buy now process:', error);
-      alert('Failed to process your order. Please try again.');
+      setError('Failed to process your order. Please try again.');
     } finally {
-      setIsLoading(false);
+      setLoading(false);
     }
   };
 
-  if (!product) return (
-    <div className="min-h-screen flex items-center justify-center bg-white">
-      <div className="text-center">
-        <div className="w-16 h-16 border-4 border-gray-900 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-        <p className="text-gray-600">Loading product details...</p>
+  // ------------------------------
+  // Render Loading & Error States
+  // ------------------------------
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
       </div>
-    </div>
-  );
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center p-4">
+        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+          {error}
+        </div>
+        <button
+          onClick={() => router.push('/products')}
+          className="flex items-center text-blue-600 hover:text-blue-800"
+        >
+          <ChevronLeft className="w-4 h-4 mr-1" />
+          Back to Products
+        </button>
+      </div>
+    );
+  }
+
+  if (!product) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center">
+        <p>Product not found</p>
+        <button
+          onClick={() => router.push('/products')}
+          className="mt-4 text-blue-600 hover:text-blue-800 flex items-center"
+        >
+          <ChevronLeft className="w-4 h-4 mr-1" />
+          Back to Products
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex flex-col bg-white">
-      <Navbar currentUser={user} />
+      <Navbar currentUser={currentUser} />
       <main className="grow pt-16">
         <div className="w-full px-6 lg:px-12 py-8">
           {/* Breadcrumb */}
@@ -196,132 +248,186 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
             {/* Left: Product Images */}
             <div>
               {/* Main Image */}
-              <div className="relative aspect-square rounded-2xl overflow-hidden bg-gray-200 mb-4">
-                <img
-                  src={product.images[selectedImage]}
-                  alt={product.name}
-                  className="object-cover w-full h-full"
-                />
+              <div className="mb-4 flex justify-center items-center bg-white rounded-lg border border-gray-200 p-2">
+                <div className="relative w-full max-w-2xl h-[32rem] flex items-center justify-center">
+                  <img 
+                    src={product.images?.[selectedImage] || product.image} 
+                    alt={product.name}
+                    className="max-w-full max-h-full w-auto h-auto object-scale-down"
+                    style={{
+                      maxWidth: '100%',
+                      maxHeight: '100%',
+                      objectFit: 'contain',
+                      objectPosition: 'center'
+                    }}
+                    onError={(e) => {
+                      const target = e.target as HTMLImageElement;
+                      target.src = '/placeholder.png';
+                    }}
+                  />
+                </div>
               </div>
-
-              {/* Thumbnail Images */}
-              <div className="grid grid-cols-4 gap-3">
-                {product.images.map((_, index) => (
-                  <button
-                    key={index}
-                    onClick={() => setSelectedImage(index)}
-                    className={`relative aspect-square rounded-lg overflow-hidden border-2 transition-all ${
-                      selectedImage === index ? 'border-gray-900' : 'border-transparent hover:border-gray-400'
-                    }`}
-                  >
-                    <img src={product.images[index]} alt={`Thumbnail ${index + 1}`} className="object-cover w-full h-full" />
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Right: Product Info */}
-            <div className="space-y-6">
-              {/* Rating */}
-              <div className="flex items-center gap-2">
-                <div className="flex items-center gap-1">
-                  {[1, 2, 3, 4, 5].map((star) => (
-                    <Star
-                      key={star}
-                      className={`w-5 h-5 ${
-                        star <= Math.floor(product.rating)
-                          ? 'fill-yellow-400 text-yellow-400'
-                          : star - 0.5 <= product.rating
-                          ? 'fill-yellow-400 text-yellow-400'
-                          : 'fill-gray-200 text-gray-200'
+              
+              {/* Thumbnails */}
+              {(product.images?.length || 0) > 1 && (
+                <div className="flex space-x-2 mt-2 overflow-x-auto">
+                  {product.images?.map((img, index) => (
+                    <img
+                      key={index}
+                      src={img}
+                      alt={`${product.name} ${index + 1}`}
+                      className={`w-20 h-20 object-cover rounded cursor-pointer transition-opacity ${
+                        selectedImage === index ? 'ring-2 ring-blue-500' : 'opacity-70 hover:opacity-100'
                       }`}
+                      onClick={() => setSelectedImage(index)}
+                      onError={(e) => {
+                        const target = e.target as HTMLImageElement;
+                        target.src = '/placeholder.png';
+                      }}
                     />
                   ))}
                 </div>
-                <span className="text-sm font-medium text-gray-900">{product.rating}</span>
-              </div>
+              )}
+            </div>
 
-              {/* Product Name */}
-              <h1 className="text-3xl lg:text-4xl font-bold text-gray-900">{product.name}</h1>
-
-              {/* Price */}
-              <p className="text-3xl font-bold text-gray-900">₱{product.price.toFixed(2)}</p>
-
-              {/* Description */}
-              <p className="text-sm lg:text-base text-gray-600 leading-relaxed">{product.description}</p>
-
-              {/* Quantity Selector */}
-              <div>
-                <h3 className="text-sm font-semibold text-gray-900 mb-3">Quantity</h3>
-                <div className="flex items-center gap-4">
-                  <div className="flex items-center border-2 border-gray-900 rounded-full">
-                    <button
-                      onClick={() => handleQuantityChange(-1)}
-                      disabled={quantity <= 1}
-                      className="w-10 h-10 flex items-center justify-center hover:bg-gray-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed rounded-l-full"
-                    >
-                      <Minus className="w-4 h-4" />
-                    </button>
-                    <input
-                      type="text"
-                      value={quantity}
-                      readOnly
-                      className="w-16 text-center font-medium text-gray-900 bg-transparent focus:outline-none"
+            {/* Right: Product Info */}
+            <div>
+              <h1 className="text-3xl font-bold mb-2">{product.name}</h1>
+              
+              {/* Rating */}
+              <div className="flex items-center mb-4">
+                <div className="flex text-yellow-400">
+                  {[1, 2, 3, 4, 5].map((star) => (
+                    <Star 
+                      key={star} 
+                      className={`w-5 h-5 ${star <= Math.floor(product.rating) ? 'fill-current' : ''}`} 
                     />
-                    <button
-                      onClick={() => handleQuantityChange(1)}
-                      disabled={quantity >= product.stock}
-                      className="w-10 h-10 flex items-center justify-center hover:bg-gray-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed rounded-r-full"
-                    >
-                      <Plus className="w-4 h-4" />
-                    </button>
+                  ))}
+                </div>
+                <span className="ml-2 text-gray-600">
+                  ({product.rating.toFixed(1)})
+                </span>
+              </div>
+              
+              {/* Price */}
+              <p className="text-2xl font-bold text-blue-600 mb-4">
+                ₱{product.price.toLocaleString('en-US', {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2
+                })}
+              </p>
+              
+              {/* Stock Status */}
+              <div className="mb-4">
+                <span className={`inline-block px-2 py-1 rounded text-sm font-medium ${
+                  product.stock > 0 
+                    ? 'bg-green-100 text-green-800' 
+                    : 'bg-red-100 text-red-800'
+                }`}>
+                  {product.stock > 0 ? 'In Stock' : 'Out of Stock'}
+                </span>
+              </div>
+              
+              {/* Description */}
+              <div className="prose max-w-none mb-6">
+                {product.description.split('\n').map((paragraph, i) => (
+                  <p key={i} className="text-gray-700 mb-2">
+                    {paragraph || <br />}
+                  </p>
+                ))}
+              </div>
+              
+              {/* Quantity Selector */}
+              <div className="flex items-center mb-6">
+                <div className="flex items-center border rounded-lg overflow-hidden">
+                  <button 
+                    onClick={() => setQuantity(prev => Math.max(1, prev - 1))}
+                    className="p-2 hover:bg-gray-100 transition-colors disabled:opacity-50"
+                    disabled={quantity <= 1}
+                    aria-label="Decrease quantity"
+                  >
+                    <Minus className="w-4 h-4" />
+                  </button>
+                  <span className="px-4 py-2 border-l border-r w-12 text-center">
+                    {quantity}
+                  </span>
+                  <button 
+                    onClick={() => setQuantity(prev => prev + 1)}
+                    className="p-2 hover:bg-gray-100 transition-colors"
+                    aria-label="Increase quantity"
+                    disabled={product.stock > 0 && quantity >= product.stock}
+                  >
+                    <Plus className="w-4 h-4" />
+                  </button>
+                </div>
+                
+                <button 
+                  onClick={handleAddToCart}
+                  disabled={loading || product.stock <= 0}
+                  className={`ml-4 flex items-center justify-center px-6 py-2 rounded-lg transition-colors ${
+                    product.stock > 0 
+                      ? 'bg-blue-600 text-white hover:bg-blue-700' 
+                      : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                  }`}
+                >
+                  {loading ? (
+                    'Adding...'
+                  ) : product.stock > 0 ? (
+                    <>
+                      <ShoppingCart className="w-5 h-5 mr-2" />
+                      Add to Cart
+                    </>
+                  ) : (
+                    'Out of Stock'
+                  )}
+                </button>
+              </div>
+              
+              {/* Specifications */}
+              {(product.specifications?.length || 0) > 0 && (
+                <div className="mt-8">
+                  <h2 className="text-xl font-semibold mb-4">Specifications</h2>
+                  <div className="space-y-3">
+                    {product.specifications?.map((spec, index) => (
+                      <div key={index} className="flex flex-wrap border-b border-gray-100 pb-2">
+                        <span className="w-full md:w-1/3 font-medium text-gray-700">
+                          {spec.label}:
+                        </span>
+                        <span className="w-full md:w-2/3 text-gray-600">
+                          {spec.value}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              
+              {/* Additional Info */}
+              <div className="mt-8 pt-6 border-t border-gray-200">
+                <h2 className="text-xl font-semibold mb-4">Product Information</h2>
+                <div className="space-y-3">
+                  <div className="flex flex-wrap">
+                    <span className="w-full md:w-1/3 font-medium text-gray-700">Category:</span>
+                    <span className="w-full md:w-2/3 text-gray-600">{product.category}</span>
+                  </div>
+                  <div className="flex flex-wrap">
+                    <span className="w-full md:w-1/3 font-medium text-gray-700">Facility:</span>
+                    <span className="w-full md:w-2/3 text-gray-600">{product.facility}</span>
+                  </div>
+                  <div className="flex flex-wrap">
+                    <span className="w-full md:w-1/3 font-medium text-gray-700">Status:</span>
+                    <span className="w-full md:w-2/3">
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                        product.status === 'active' 
+                          ? 'bg-green-100 text-green-800' 
+                          : 'bg-gray-100 text-gray-800'
+                      }`}>
+                        {product.status.charAt(0).toUpperCase() + product.status.slice(1)}
+                      </span>
+                    </span>
                   </div>
                 </div>
               </div>
-
-              {/* Action Buttons */}
-              <div className="space-y-3">
-                <button
-                  onClick={handleAddToCart}
-                  disabled={isLoading}
-                  className="w-full bg-gray-900 text-white py-4 rounded-full font-medium hover:bg-gray-800 transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {isLoading ? (
-                    <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  ) : (
-                    <ShoppingCart className="w-5 h-5" />
-                  )}
-                  {isLoading ? 'Adding to Cart...' : 'Add to Cart'}
-                </button>
-                <button
-                  onClick={handleBuyNow}
-                  disabled={isLoading}
-                  className="w-full bg-white text-gray-900 py-4 rounded-full font-medium border-2 border-gray-900 hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed relative"
-                >
-                  {isLoading ? (
-                    <>
-                      <div className="w-5 h-5 border-2 border-gray-900 border-t-transparent rounded-full animate-spin absolute left-1/2 -ml-2.5" />
-                      <span className="opacity-0">Buy Now</span>
-                    </>
-                  ) : (
-                    'Buy Now'
-                  )}
-                </button>
-              </div>
-
-              {/* Product Specifications */}
-              {product.specifications.length > 0 && (
-                <div className="pt-6 border-t border-gray-200">
-                  <h3 className="text-lg font-bold text-gray-900 mb-4">Product Specifications</h3>
-                  <ul className="space-y-2">
-                    {product.specifications.map((spec, index) => (
-                      <li key={index} className="text-sm text-gray-700">
-                        <span className="font-medium">• {spec.label}:</span> {spec.value}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
             </div>
           </div>
         </div>

@@ -1,9 +1,10 @@
 'use client';
 
+import { JSX } from 'react';
 import Navbar from '@/components/layout/Navbar';
 import Footer from '@/components/layout/Footer';
 import ContactSection from '@/components/home/ContactSection';
-import { useState, useEffect, JSX } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { ShoppingBag, ChevronDown } from 'lucide-react';
 import Link from 'next/link';
 import { 
@@ -32,6 +33,7 @@ interface Product {
   image: string;
   category: string;
   facility: string;
+  status: 'active' | 'inactive';
   createdAt: any | null; // Firestore timestamp or null
 }
 
@@ -49,9 +51,10 @@ export default function ProductsPage(): JSX.Element {
   const [selectedCategory, setSelectedCategory] = useState<string>(''); // single selection
   const [selectedFacility, setSelectedFacility] = useState<string>(''); // single selection
   const [sortBy, setSortBy] = useState<'featured' | 'price-low' | 'price-high' | 'newest'>('featured');
-  const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentUser, setCurrentUser] = useState<{ uid: string; email: string } | null>(null);
+  const [allProducts, setAllProducts] = useState<Product[]>([]);
+  const [filteredProducts, setFilteredProducts] = useState<Product[]>([]);
 
   const categories = [
     'Bags & Purses',
@@ -59,7 +62,6 @@ export default function ProductsPage(): JSX.Element {
     'Paper Crafts',
     'Pastries',
     'Wood Crafts',
-    'Bonsel'
   ];
 
   const facilities = [
@@ -87,54 +89,90 @@ export default function ProductsPage(): JSX.Element {
   }, []);
 
   // ------------------------------
-  // Fetch products from Firestore
+  // Fetch all products from Firestore on initial load
   // ------------------------------
   useEffect(() => {
-    const fetchProducts = async () => {
+    const fetchAllProducts = async () => {
       setLoading(true);
-
       try {
-        const constraints: QueryConstraint[] = [];
-
-        // Firestore filtering (single selection)
-        if (selectedCategory) constraints.push(where('category', '==', selectedCategory));
-        if (selectedFacility) constraints.push(where('facility', '==', selectedFacility));
-        constraints.push(where('price', '>=', priceRange[0]));
-        constraints.push(where('price', '<=', priceRange[1]));
-
-        // Sorting
-        if (sortBy === 'price-low') constraints.push(orderBy('price', 'asc'));
-        else if (sortBy === 'price-high') constraints.push(orderBy('price', 'desc'));
-        else if (sortBy === 'newest') constraints.push(orderBy('createdAt', 'desc'));
-
-        const q = query(collection(db, 'items'), ...constraints);
+        // Fetch all active products once
+        const q = query(
+          collection(db, 'items'),
+          where('status', '==', 'active')
+        );
+        
+        console.log('Fetching all active products...');
         const querySnapshot = await getDocs(q);
-
-        // Map Firestore docs with fallbacks
-        const items: Product[] = querySnapshot.docs.map(doc => {
-          const data = doc.data() as Partial<Product>;
+        
+        const productsData = querySnapshot.docs.map(doc => {
+          const data = doc.data();
           return {
             id: doc.id,
             name: data.name || 'Unnamed Product',
-            price: typeof data.price === 'number' ? data.price : 0,
+            price: Number(data.price) || 0,
             image: data.image || '/placeholder.png',
             category: data.category || 'Uncategorized',
             facility: data.facility || 'Unknown Facility',
+            status: data.status || 'active',
             createdAt: data.createdAt || null,
           };
         });
-
-        setProducts(items);
+        
+        console.log(`Fetched ${productsData.length} products`);
+        setAllProducts(productsData);
       } catch (error) {
         console.error('Error fetching products:', error);
       } finally {
         setLoading(false);
       }
     };
-
-    fetchProducts();
-    // explicitly list primitive deps (avoid array reference equality)
-  }, [selectedCategory, selectedFacility, priceRange[0], priceRange[1], sortBy]);
+    
+    fetchAllProducts();
+  }, []);
+  
+  // ------------------------------
+  // Filter and sort products in memory
+  // ------------------------------
+  useEffect(() => {
+    if (!allProducts.length) return;
+    
+    // Apply filters
+    let result = [...allProducts];
+    
+    // Filter by category
+    if (selectedCategory) {
+      result = result.filter(p => p.category === selectedCategory);
+    }
+    
+    // Filter by facility
+    if (selectedFacility) {
+      result = result.filter(p => p.facility === selectedFacility);
+    }
+    
+    // Filter by price range
+    result = result.filter(p => 
+      p.price >= priceRange[0] && p.price <= priceRange[1]
+    );
+    
+    // Apply sorting
+    result.sort((a, b) => {
+      if (sortBy === 'price-low') {
+        return a.price - b.price;
+      } else if (sortBy === 'price-high') {
+        return b.price - a.price;
+      } else if (sortBy === 'newest') {
+        const aDate = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(0);
+        const bDate = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(0);
+        return bDate.getTime() - aDate.getTime();
+      }
+      // Default: featured (sort by createdAt descending)
+      const aDate = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(0);
+      const bDate = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(0);
+      return bDate.getTime() - aDate.getTime();
+    });
+    
+    setFilteredProducts(result);
+  }, [allProducts, selectedCategory, selectedFacility, priceRange, sortBy]);
 
   // ------------------------------
   // Handlers
@@ -295,11 +333,11 @@ export default function ProductsPage(): JSX.Element {
               {/* Product Grid */}
               {loading ? (
                 <p>Loading products...</p>
-              ) : products.length === 0 ? (
+              ) : filteredProducts.length === 0 ? (
                 <p className="text-gray-600 text-center mt-10">No products found for your selected filters.</p>
               ) : (
                 <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-6">
-                  {products.map((product) => (
+                  {filteredProducts.map((product: Product) => (
                     <div key={product.id} className="group">
                       <Link href={`/products/${product.id}`}>
                         <div className="relative aspect-square rounded-2xl overflow-hidden bg-gray-200 mb-3 cursor-pointer">
