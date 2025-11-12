@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import { ChevronDown, ChevronUp } from 'lucide-react';
 import {
   LayoutDashboard,
   Package,
@@ -22,7 +23,7 @@ import {
   X
 } from 'lucide-react';
 import { db } from '@/firebase/config';
-import { collection, getDocs, getCountFromServer, query, orderBy, limit, addDoc, serverTimestamp, where } from 'firebase/firestore';
+import { collection, getDocs, getDoc, doc, query, orderBy, limit, where, getCountFromServer, updateDoc, deleteDoc, addDoc, serverTimestamp } from 'firebase/firestore';
 
 interface Product {
   id: string;
@@ -266,11 +267,156 @@ export default function AdminDashboard() {
   const [searchQuery, setSearchQuery] = useState('');
   const [orderSearchQuery, setOrderSearchQuery] = useState('');
   const [orderFilter, setOrderFilter] = useState<'all' | 'processing' | 'pickup' | 'delivered'>('all');
+  const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
   const [showAddProductModal, setShowAddProductModal] = useState(false);
+  const [isMarkingAsShipped, setIsMarkingAsShipped] = useState<Record<string, boolean>>({});
+  
+  interface ShippingInfo {
+    fullName?: string;
+    streetAddress?: string;
+    city?: string;
+    province?: string;
+    zipCode?: string;
+    phoneNumber?: string;
+    email?: string;
+    deliveryNotes?: string;
+  }
+
+  interface Order {
+    id: string;
+    status: string;
+    items: string;
+    date: string;
+    amount: string;
+    customerName?: string;
+    paymentMethod?: string;
+    time?: Date;
+    shippingInfo?: ShippingInfo | ShippingInfo[];
+    createdAt?: {
+      toDate: () => Date;
+    };
+    total?: number;
+  }
+  
+  // Orders state and fetching logic
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [loadingOrders, setLoadingOrders] = useState(false);
+
+  // Fetch orders when orders tab is active
+  useEffect(() => {
+    const fetchOrders = async () => {
+      if (activeTab !== 'orders') return;
+      
+      setLoadingOrders(true);
+      try {
+        const ordersQuery = query(collection(db, 'orders'), orderBy('createdAt', 'desc'));
+        const querySnapshot = await getDocs(ordersQuery);
+        
+        const ordersData = querySnapshot.docs.map(doc => {
+          const data = doc.data();
+          const itemsText = Array.isArray(data.items) 
+            ? `${data.items.length} items`
+            : 'No items';
+          
+          // Get customer name from shippingInfo.fullName if available, otherwise fall back to other fields
+          const customerName = data.shippingInfo?.fullName || 
+                             data.customerName || 
+                             data.customer?.name || 
+                             'Unknown Customer';
+            
+          return {
+            id: doc.id,
+            status: data.status || 'Placed',
+            items: itemsText,
+            date: data.createdAt?.toDate().toLocaleString() || new Date().toLocaleString(),
+            amount: `₱${(data.total || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`,
+            customerName: customerName,
+            paymentMethod: data.paymentMethod || data.payment?.method || 'Unknown',
+            time: data.createdAt?.toDate() || new Date(),
+            // Include full shipping info for reference
+            shippingInfo: data.shippingInfo
+          };
+        });
+        
+        setOrders(ordersData);
+      } catch (error) {
+        console.error('Error fetching orders:', error);
+      } finally {
+        setLoadingOrders(false);
+      }
+    };
+    
+    fetchOrders();
+  }, [activeTab]);
 
   const admin = {
     name: 'BJMP Administrator',
     role: 'Admin'
+  };
+
+  const handleTabClick = (tab: 'dashboard' | 'products' | 'orders' | 'settings') => {
+    setActiveTab(tab);
+  };
+
+  const handleMarkAsShipped = async (orderId: string) => {
+    try {
+      setIsMarkingAsShipped(prev => ({ ...prev, [orderId]: true }));
+      
+      // Get the order document reference
+      const orderRef = doc(db, 'orders', orderId);
+      const orderSnap = await getDoc(orderRef);
+      
+      if (!orderSnap.exists()) {
+        throw new Error('Order not found');
+      }
+      
+      const orderData = orderSnap.data();
+      const userId = orderData.userId; // Assuming the userId is stored in the order document
+      
+      if (!userId) {
+        throw new Error('User ID not found in order');
+      }
+      
+      // Update the order status in Firestore
+      await updateDoc(orderRef, {
+        status: 'Shipped',
+        updatedAt: serverTimestamp(),
+        shippedAt: serverTimestamp()
+      });
+      
+      // Create a notification for the user
+      const notificationRef = collection(db, 'notifications');
+      await addDoc(notificationRef, {
+        userId: userId,
+        type: 'order_shipped',
+        title: 'Order Shipped',
+        message: `Your order #${orderId} has been shipped and is on its way!`,
+        orderId: orderId,
+        isRead: false,
+        createdAt: serverTimestamp()
+      });
+      
+      // Update the local state
+      setOrders(prevOrders => 
+        prevOrders.map(order => 
+          order.id === orderId 
+            ? { 
+                ...order, 
+                status: 'Shipped',
+                // Update any other fields that might have changed
+                time: new Date() // Update the time to now
+              } 
+            : order
+        )
+      );
+      
+      console.log(`Order ${orderId} marked as shipped and notification created`);
+    } catch (error) {
+      console.error('Error marking order as shipped:', error);
+      // You might want to show an error toast/notification to the user here
+    } finally {
+      setIsMarkingAsShipped(prev => ({ ...prev, [orderId]: false }));
+    }
   };
 
   const menuItems: Array<{
@@ -358,34 +504,114 @@ export default function AdminDashboard() {
           console.warn('Could not fetch recent orders:', err);
         }
 
-        // Fetch top products from `items` collection, sort by `sold`/`sales` field
+        // Fetch top selling products based on orders
         try {
-          const itemsSnap = await getDocs(collection(db, 'items'));
-          const itemsArr = itemsSnap.docs.map((d) => {
-            const data = d.data() as any;
-            // Prefer explicit name fields; fall back to common alternatives then to doc id
-            const name = data.name ?? data.title ?? data.productName ?? d.id;
-            const facility = data.facility ?? data.location ?? data.origin ?? 'Unknown';
-            const sold = typeof data.sold === 'number'
-              ? data.sold
-              : (Number(data.sold) || Number(data.sales) || Number(data.unitsSold) || 0);
-
-            // Normalize price: handle number, string with currency symbol, or text field
-            let price = '₱0.00';
-            if (typeof data.price === 'number') {
-              price = `₱${data.price.toLocaleString()}`;
-            } else if (typeof data.price === 'string') {
-              const numeric = Number(data.price.replace(/[^0-9.-]+/g, '')) || 0;
-              price = `₱${numeric.toLocaleString()}`;
-            } else if (data.priceText) {
-              price = data.priceText;
+          // First, count how many orders contain each product
+          const productOrderCounts = new Map<string, number>();
+          const allOrdersSnap = await getDocs(collection(db, 'orders'));
+          allOrdersSnap.forEach(orderDoc => {
+            const orderData = orderDoc.data();
+            if (orderData.items && Array.isArray(orderData.items)) {
+              orderData.items.forEach((item: any) => {
+                const productId = item.productId || item.id;
+                if (productId) {
+                  productOrderCounts.set(
+                    productId, 
+                    (productOrderCounts.get(productId) || 0) + 1
+                  );
+                }
+              });
             }
-
-            return { name, facility, sold, price };
           });
-          itemsArr.sort((a, b) => b.sold - a.sold);
-          const top = itemsArr.slice(0, 3);
-          if (mounted && top.length) setTopProducts(top);
+          
+          // Then get the first 10 orders to determine top selling products
+          const ordersQuery = query(
+            collection(db, 'orders'),
+            orderBy('createdAt', 'asc'),
+            limit(10) // Get first 10 orders as a sample
+          );
+          
+          const ordersSnap = await getDocs(ordersQuery);
+          const productSales = new Map<string, {count: number, lastOrderDate: Date}>();
+          
+          // Count sales per product from the first orders
+          ordersSnap.forEach(doc => {
+            const order = doc.data();
+            if (order.items && Array.isArray(order.items)) {
+              order.items.forEach((item: any) => {
+                const productId = item.productId || item.id;
+                if (productId) {
+                  const current = productSales.get(productId) || { count: 0, lastOrderDate: new Date(0) };
+                  productSales.set(productId, {
+                    count: current.count + (item.quantity || 1),
+                    lastOrderDate: order.createdAt?.toDate() > current.lastOrderDate 
+                      ? order.createdAt.toDate() 
+                      : current.lastOrderDate
+                  });
+                }
+              });
+            }
+          });
+
+          // Convert to array and sort by sales count (descending)
+          const topSelling = Array.from(productSales.entries())
+            .sort((a, b) => b[1].count - a[1].count)
+            .slice(0, 3); // Get top 3
+
+          // Fetch product details for the top selling items
+          const productPromises = topSelling.map(async ([productId, salesData]) => {
+            const productDoc = await getDoc(doc(db, 'items', productId));
+            if (!productDoc.exists()) return null;
+            
+            const data = productDoc.data();
+            const name = data.name ?? data.title ?? productId;
+            const facility = data.facility ?? data.location ?? 'Unknown';
+            
+            // Handle price from Firestore (stored as string)
+            let price = '₱0.00';
+            if (data.price) {
+              // If price is a string, ensure it has proper formatting
+              if (typeof data.price === 'string') {
+                // Remove any existing currency symbol and extra spaces
+                const cleanPrice = data.price.replace(/[^0-9.]/g, '');
+                const numericValue = parseFloat(cleanPrice);
+                if (!isNaN(numericValue)) {
+                  price = `₱${numericValue.toLocaleString(undefined, {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2
+                  })}`;
+                } else {
+                  price = `₱${data.price.trim()}`; // Fallback to raw string if parsing fails
+                }
+              } else if (typeof data.price === 'number') {
+                // Handle if price is stored as number (just in case)
+                price = `₱${data.price.toLocaleString(undefined, {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2
+                })}`;
+              }
+            } else if (data.priceText) {
+              // Fallback to priceText if price is not available
+              price = data.priceText.startsWith('₱') ? data.priceText : `₱${data.priceText}`;
+            }
+            
+            return {
+              id: productId,
+              name,
+              facility,
+              sold: salesData.count,
+              price,
+              image: data.image || data.imageUrl || data.thumbnail || '/product-placeholder.jpg',
+              orderCount: productOrderCounts.get(productId) || 0,
+              lastOrderDate: salesData.lastOrderDate
+            } as TopProduct;
+          });
+
+          const topProducts = (await Promise.all(productPromises)).filter(Boolean) as TopProduct[];
+          
+          if (mounted && topProducts.length) {
+            setTopProducts(topProducts);
+          }
         } catch (err) {
           console.warn('Could not fetch top products:', err);
         }
@@ -468,11 +694,47 @@ export default function AdminDashboard() {
     }
   ]);
 
+  // Define the TopProduct interface
+  interface TopProduct {
+    id: string;
+    name: string;
+    facility: string;
+    sold: number;
+    price: string;
+    image: string;
+    orderCount: number;
+    lastOrderDate?: Date;
+  }
+
   // Top products (initial static fallback, replaced by Firestore data when available)
-  const [topProducts, setTopProducts] = useState<Array<{name: string; facility: string; sold: number; price: string;}>>([
-    { name: 'Bamboo Mug', facility: 'Baguio City Jail', sold: 89, price: '₱71,290' },
-    { name: 'Bamboo Mug', facility: 'Baguio City Jail', sold: 89, price: '₱71,290' },
-    { name: 'Bamboo Mug', facility: 'Baguio City Jail', sold: 89, price: '₱71,290' }
+  const [topProducts, setTopProducts] = useState<TopProduct[]>([
+    { 
+      id: '1',
+      name: 'Bamboo Mug', 
+      facility: 'Baguio City Jail', 
+      sold: 89, 
+      price: '₱71,290',
+      image: '/product-placeholder.jpg',
+      orderCount: 0
+    },
+    { 
+      id: '2',
+      name: 'Bamboo Mug', 
+      facility: 'Baguio City Jail', 
+      sold: 89, 
+      price: '₱71,290',
+      image: '/product-placeholder.jpg',
+      orderCount: 0
+    },
+    { 
+      id: '3',
+      name: 'Bamboo Mug', 
+      facility: 'Baguio City Jail', 
+      sold: 89, 
+      price: '₱71,290',
+      image: '/product-placeholder.jpg',
+      orderCount: 0
+    }
   ]);
 
   const [products, setProducts] = useState<Product[]>([]);
@@ -614,39 +876,6 @@ export default function AdminDashboard() {
     fetchAnalytics();
     return () => { mounted = false; };
   }, []);
-
-  const orders: Order[] = [
-    {
-      id: '#BJMP-2025-001',
-      customer: 'Ana Garcia',
-      items: 2,
-      payment: 'GCash',
-      date: 'Nov 8, 2024,',
-      time: '09:10 PM',
-      amount: '₱1100.00',
-      status: 'Pending'
-    },
-    {
-      id: '#BJMP-2025-002',
-      customer: 'Juan Dela Cruz',
-      items: 2,
-      payment: 'Cash on Pickup',
-      date: 'Nov 8, 2024,',
-      time: '05:30 PM',
-      amount: '₱600.00',
-      status: 'Ready for Pickup'
-    },
-    {
-      id: '#BJMP-2025-003',
-      customer: 'Maria Santos',
-      items: 2,
-      payment: 'GCash',
-      date: 'Nov 6, 2024,',
-      time: '10:20 PM',
-      amount: '₱710.00',
-      status: 'Completed'
-    }
-  ];
 
   // Handle Add Product functionality
   const handleAddProduct = () => {
@@ -791,7 +1020,12 @@ export default function AdminDashboard() {
               <div className="bg-white rounded-2xl p-6 border border-gray-200">
                 <div className="flex items-center justify-between mb-6">
                   <h2 className="text-xl font-bold text-gray-900">Recent Orders</h2>
-                  <button className="text-sm text-gray-600 hover:text-gray-900">View All</button>
+                  <button 
+                    onClick={() => setActiveTab('orders')}
+                    className="text-sm text-gray-600 hover:text-gray-900 transition-colors"
+                  >
+                    View All
+                  </button>
                 </div>
                 <div className="space-y-4">
                   {recentOrders.map((order) => (
@@ -827,10 +1061,21 @@ export default function AdminDashboard() {
                 <div className="grid grid-cols-3 gap-4">
                   {topProducts.map((product, index) => (
                     <div key={index} className="text-center">
-                      <div className="aspect-square bg-gray-200 rounded-xl mb-3"></div>
+                      <div className="aspect-square bg-gray-100 rounded-xl mb-3 overflow-hidden">
+                        <img 
+                          src={product.image || '/product-placeholder.jpg'} 
+                          alt={product.name}
+                          className="w-full h-full object-cover"
+                          onError={(e) => {
+                            const target = e.target as HTMLImageElement;
+                            target.onerror = null;
+                            target.src = '/product-placeholder.jpg';
+                          }}
+                        />
+                      </div>
                       <h3 className="text-sm font-bold text-gray-900 mb-1">{product.name}</h3>
                       <p className="text-xs text-gray-600 mb-2">{product.facility}</p>
-                      <p className="text-xs text-gray-500 mb-1">{product.sold} Sold</p>
+                      <p className="text-xs text-gray-500 mb-1">{product.orderCount} Orders • {product.sold} Sold</p>
                       <p className="text-sm font-bold text-gray-900">{product.price}</p>
                     </div>
                   ))}
@@ -1191,60 +1436,144 @@ export default function AdminDashboard() {
 
             {/* Orders List */}
             <div className="space-y-4">
-              {orders.map((order) => (
-                <div key={order.id} className="bg-white rounded-2xl border border-gray-200 p-6">
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-3">
-                      <h3 className="text-lg font-bold text-gray-900">{order.id}</h3>
-                      <span
-                        className={`flex items-center gap-1 text-xs px-3 py-1 rounded-full font-medium ${
-                          order.status === 'Pending'
-                            ? 'bg-gray-200 text-gray-700'
-                            : order.status === 'Ready for Pickup'
-                            ? 'bg-gray-800 text-white'
-                            : 'bg-black text-white'
-                        }`}
-                      >
-                        {order.status === 'Pending' && <Clock className="w-3 h-3" />}
-                        {order.status === 'Ready for Pickup' && <Package className="w-3 h-3" />}
-                        {order.status === 'Completed' && '✓'}
-                        {order.status === 'Pending' ? 'Pending' : order.status === 'Ready for Pickup' ? 'Ready for Pickup' : 'Completed'}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-4">
-                      <span className="text-2xl font-bold text-gray-900">{order.amount}</span>
-                      <button className="w-10 h-10 rounded-full bg-black flex items-center justify-center hover:bg-gray-800 transition-colors">
-                        <Eye className="w-5 h-5 text-white" />
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-4 gap-6">
-                    <div>
-                      <div className="text-xs text-gray-500 mb-1">Customer</div>
-                      <div className="text-sm font-medium text-gray-900">{order.customer}</div>
-                    </div>
-                    <div>
-                      <div className="text-xs text-gray-500 mb-1">Items</div>
-                      <div className="text-sm text-gray-900">
-                        {order.items}<br />
-                        <span className="text-gray-600">Items</span>
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-xs text-gray-500 mb-1">Payment</div>
-                      <div className="text-sm text-gray-900">{order.payment}</div>
-                    </div>
-                    <div>
-                      <div className="text-xs text-gray-500 mb-1">Date</div>
-                      <div className="text-sm text-gray-900">
-                        {order.date}<br />
-                        {order.time}
-                      </div>
-                    </div>
-                  </div>
+              {loadingOrders ? (
+                <div className="flex justify-center items-center h-64">
+                  <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-gray-900"></div>
                 </div>
-              ))}
+              ) : orders.length === 0 ? (
+                <div className="text-center py-12">
+                  <ShoppingCart className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                  <h3 className="text-lg font-medium text-gray-900">No orders yet</h3>
+                  <p className="text-gray-500 mt-1">When you receive orders, they'll appear here.</p>
+                </div>
+              ) : (
+                orders.map((order) => (
+                  <div key={order.id} className="bg-white rounded-2xl border border-gray-200 p-6">
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center gap-3">
+                        <h3 className="text-lg font-bold text-gray-900">{order.id}</h3>
+                        <span
+                          className={`flex items-center gap-1 text-xs px-3 py-1 rounded-full font-medium ${
+                            order.status === 'Pending' || order.status === 'Placed'
+                              ? 'bg-yellow-100 text-yellow-800'
+                              : order.status === 'Ready for Pickup' || order.status === 'Processing'
+                              ? 'bg-blue-100 text-blue-800'
+                              : 'bg-green-100 text-green-800'
+                          }`}
+                        >
+                          {order.status}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-4">
+                        <span className="text-2xl font-bold text-gray-900">{order.amount}</span>
+                        {order.status !== 'Shipped' && (
+                          <button 
+                            onClick={() => handleMarkAsShipped(order.id)}
+                            disabled={isMarkingAsShipped[order.id]}
+                            className={`px-4 py-2 text-sm font-medium rounded-full transition-colors ${
+                              isMarkingAsShipped[order.id]
+                                ? 'bg-gray-300 text-gray-600 cursor-not-allowed'
+                                : 'bg-green-600 text-white hover:bg-green-700'
+                            }`}
+                          >
+                            {isMarkingAsShipped[order.id] ? 'Processing...' : 'Mark as Shipped'}
+                          </button>
+                        )}
+                        {order.status === 'Shipped' && (
+                          <span className="px-3 py-1 text-xs font-medium text-green-800 bg-green-100 rounded-full">
+                            Shipped
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-3">
+                      <div>
+                        <div className="text-xs text-gray-500 mb-1">Customer</div>
+                        <div className="text-sm font-medium text-gray-900">{order.customerName || 'Unknown Customer'}</div>
+                      </div>
+                      <div>
+                        <div className="text-xs text-gray-500 mb-1">Items</div>
+                        <div className="text-sm text-gray-900">
+                          {order.items}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-xs text-gray-500 mb-1">Payment</div>
+                        <div className="text-sm text-gray-900">{order.paymentMethod || 'Unknown'}</div>
+                      </div>
+                      <div>
+                        <div className="text-xs text-gray-500 mb-1">Date</div>
+                        <div className="text-sm text-gray-900">
+                          {new Date(order.date).toLocaleDateString()}
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <button 
+                      onClick={() => setExpandedOrderId(expandedOrderId === order.id ? null : order.id)}
+                      className="text-sm text-blue-600 hover:text-blue-800 flex items-center gap-1 mb-2"
+                    >
+                      {expandedOrderId === order.id ? (
+                        <>
+                          <ChevronUp className="w-4 h-4" />
+                          Hide Shipping Details
+                        </>
+                      ) : (
+                        <>
+                          <ChevronDown className="w-4 h-4" />
+                          View Shipping Details
+                        </>
+                      )}
+                    </button>
+                    
+                    {expandedOrderId === order.id && order.shippingInfo && (
+                      <div className="mt-3 pt-3 border-t border-gray-100">
+                        <h4 className="text-sm font-medium text-gray-900 mb-2">Shipping Information</h4>
+                        {Array.isArray(order.shippingInfo) ? (
+                          <div className="space-y-4">
+                            {order.shippingInfo.map((info, idx) => (
+                              <div key={idx} className="bg-gray-50 p-3 rounded-lg">
+                                <p className="font-medium text-sm">{info.fullName || 'N/A'}</p>
+                                <p className="text-sm">{info.streetAddress || ''}</p>
+                                <p className="text-sm">
+                                  {[info.city, info.province, info.zipCode].filter(Boolean).join(', ')}
+                                </p>
+                                <p className="text-sm">
+                                  {[info.phoneNumber, info.email].filter(Boolean).join(' • ')}
+                                </p>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="bg-gray-50 p-3 rounded-lg">
+                            <p className="font-medium text-sm">{order.shippingInfo.fullName || 'N/A'}</p>
+                            <p className="text-sm">{order.shippingInfo.streetAddress || ''}</p>
+                            <p className="text-sm">
+                              {[
+                                order.shippingInfo.city,
+                                order.shippingInfo.province,
+                                order.shippingInfo.zipCode
+                              ].filter(Boolean).join(', ')}
+                            </p>
+                            <p className="text-sm">
+                              {[
+                                order.shippingInfo.phoneNumber,
+                                order.shippingInfo.email
+                              ].filter(Boolean).join(' • ')}
+                            </p>
+                            {order.shippingInfo.deliveryNotes && (
+                              <p className="text-sm mt-2 text-gray-600">
+                                <span className="font-medium">Notes:</span> {order.shippingInfo.deliveryNotes}
+                              </p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ))
+              )}
             </div>
           </>
         )}

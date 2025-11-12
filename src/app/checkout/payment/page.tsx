@@ -55,7 +55,7 @@ export default function PaymentPage() {
   // subtotal is either the passed subtotal from cart or computed from items as fallback
   const computedSubtotal = cartItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
   const subtotal = checkoutSubtotal !== null ? checkoutSubtotal : computedSubtotal;
-  const shippingCost = shippingMethod === 'standard' ? 0 : 100;
+  const shippingCost = shippingMethod === 'express' ? 100 : 0;
   const total = subtotal + shippingCost;
 
   const handleContinue = () => {
@@ -63,7 +63,7 @@ export default function PaymentPage() {
     const paymentData = {
       method: paymentMethod,
       shippingMethod: shippingMethod,
-      shippingCost: shippingMethod === 'standard' ? 0 : 100
+      shippingCost: shippingMethod === 'express' ? 100 : 0
     };
     
     try {

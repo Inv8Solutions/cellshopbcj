@@ -173,9 +173,23 @@ export default function CartPage() {
                     </div>
                     {/* Product Image */}
                     <div className="relative w-24 h-24 rounded-xl overflow-hidden bg-gray-200 shrink-0">
-                      <div className="absolute inset-0 bg-gray-300 flex items-center justify-center">
-                        <span className="text-gray-400 text-xs">Image</span>
-                      </div>
+                      {item.image ? (
+                        <img 
+                          src={item.image} 
+                          alt={item.name}
+                          className="w-full h-full object-cover"
+                          onError={(e) => {
+                            // Fallback to placeholder if image fails to load
+                            const target = e.target as HTMLImageElement;
+                            target.onerror = null;
+                            target.src = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiAjd2VhcmVzdW5kZXIiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiBjbGFzcz0ibHVjaWRlIGx1Y2lkZS1pbWFnZSI+PHJlY3Qgd2lkdGg9IjE4IiBoZWlnaHQ9IjE4IiB4PSIzIiB5PSIzIiByeD0iMiIgcnk9IjIiLz48Y2lyY2xlIGN4PSI4LjUiIGN5PSI4LjUiIHI9IjEuNSIvPjxwb2x5bGluZSBwb2ludHM9IjIxIDE1IDIxIDMgMyAxOCA4LjUgMTguNSIgLz48L3N2Zz4=';
+                          }}
+                        />
+                      ) : (
+                        <div className="absolute inset-0 bg-gray-300 flex items-center justify-center">
+                          <span className="text-gray-400 text-xs">No image</span>
+                        </div>
+                      )}
                     </div>
 
                     {/* Product Details */}
