@@ -39,6 +39,7 @@ import {
   deleteDoc, 
   addDoc, 
   serverTimestamp,
+  startAfter,
   DocumentData
 } from 'firebase/firestore';
 import { Line } from 'react-chartjs-2';
@@ -160,8 +161,9 @@ ChartJS.register(
 const AddProductModal = ({ isOpen, onClose, onSave }: {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (product: any) => void;
+  onSave: (product: any) => Promise<void>;
 }) => {
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
     category: '',
@@ -180,20 +182,27 @@ const AddProductModal = ({ isOpen, onClose, onSave }: {
     }));
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    onSave(formData);
-    onClose();
-    // Reset form
-    setFormData({
-      name: '',
-      category: '',
-      facility: '',
-      price: '',
-      stock: 0,
-      description: '',
-      image: ''
-    });
+    if (isSubmitting) return;
+    
+    try {
+      setIsSubmitting(true);
+      await onSave(formData);
+      onClose();
+      // Reset form
+      setFormData({
+        name: '',
+        category: '',
+        facility: '',
+        price: '',
+        stock: 0,
+        description: '',
+        image: ''
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   if (!isOpen) return null;
@@ -360,9 +369,20 @@ const AddProductModal = ({ isOpen, onClose, onSave }: {
             </button>
             <button
               type="submit"
-              className="px-6 py-3 text-sm font-medium text-white bg-black rounded-xl hover:bg-gray-800 transition-colors"
+              disabled={isSubmitting}
+              className={`px-6 py-3 text-sm font-medium text-white bg-black rounded-xl hover:bg-gray-800 transition-colors flex items-center justify-center gap-2 min-w-[120px] ${isSubmitting ? 'opacity-75' : ''}`}
             >
-              Add Product
+              {isSubmitting ? (
+                <>
+                  <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  Adding...
+                </>
+              ) : (
+                'Add Product'
+              )}
             </button>
           </div>
         </form>
@@ -387,6 +407,10 @@ export default function AdminDashboard() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loadingOrders, setLoadingOrders] = useState(false);
   const [productsLoading, setProductsLoading] = useState(true);
+  const [lastVisible, setLastVisible] = useState<DocumentData | null>(null);
+  const [firstVisible, setFirstVisible] = useState<DocumentData | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const productsPerPage = 10;
   
   // Loading States
   const [isMarkingAsShipped, setIsMarkingAsShipped] = useState<Record<string, boolean>>({});
@@ -460,6 +484,64 @@ export default function AdminDashboard() {
     
     fetchOrders();
   }, [activeTab]);
+
+  const fetchProducts = useCallback(async (page: number, isInitialLoad = false) => {
+    // Skip if we're already loading or if we're not on the products tab
+    if ((productsLoading && !isInitialLoad) || activeTab !== 'products') return;
+    
+    setProductsLoading(true);
+    try {
+      let productsQuery;
+      const itemsCollection = collection(db, 'items');
+      
+      if (page > currentPage && lastVisible) {
+        // Next page
+        productsQuery = query(itemsCollection, orderBy('name'), startAfter(lastVisible), limit(productsPerPage));
+      } else if (page < currentPage && firstVisible) {
+        // Previous page - we need to reverse the order to get the previous set
+        productsQuery = query(itemsCollection, orderBy('name', 'desc'), startAfter(firstVisible), limit(productsPerPage));
+      } else {
+        // First load or refresh
+        productsQuery = query(itemsCollection, orderBy('name'), limit(productsPerPage));
+      }
+
+      const documentSnapshots = await getDocs(productsQuery);
+      
+      // If we're going to the previous page, we need to reverse the results
+      const shouldReverse = page < currentPage;
+      let newProducts = documentSnapshots.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      } as Product));
+
+      if (shouldReverse) {
+        newProducts = newProducts.reverse();
+      }
+
+      // Only update state if we have new data
+      if (newProducts.length > 0 || page === 1) {
+        setProducts(newProducts);
+        
+        if (documentSnapshots.docs.length > 0) {
+          setLastVisible(documentSnapshots.docs[documentSnapshots.docs.length - 1]);
+          setFirstVisible(documentSnapshots.docs[0]);
+        }
+        
+        setCurrentPage(page);
+      }
+    } catch (error) {
+      console.error('Error fetching products:', error);
+    } finally {
+      setProductsLoading(false);
+    }
+  }, [activeTab, currentPage, lastVisible, firstVisible, productsLoading, productsPerPage]);
+
+  // Fetch products when the products tab becomes active
+  useEffect(() => {
+    if (activeTab === 'products' && products.length === 0) {
+      fetchProducts(1, true);
+    }
+  }, [activeTab, fetchProducts, products.length]);
 
   const admin = {
     name: 'BJMP Administrator',
@@ -769,6 +851,7 @@ export default function AdminDashboard() {
       });
 
       alert('Product added successfully!');
+      window.location.reload(); // Reload the page to show the new product
     } catch (error) {
       console.error('Error adding new product:', error);
       alert('Failed to add product. Please try again.');
@@ -1266,8 +1349,24 @@ export default function AdminDashboard() {
                           {/* Product */}
                           <td className="px-6 py-4">
                             <div className="flex items-center gap-3">
-                              <div className="w-12 h-12 bg-amber-100 rounded-lg shrink-0 overflow-hidden">
-                                <div className="w-full h-full bg-linear-to-br from-amber-600 to-amber-800"></div>
+                              <div className="w-12 h-12 rounded-lg shrink-0 overflow-hidden">
+                                {product.image ? (
+                                  <img 
+                                    src={product.image} 
+                                    alt={product.name}
+                                    className="w-full h-full object-cover"
+                                    onError={(e) => {
+                                      // Fallback to a colored div if image fails to load
+                                      const target = e.target as HTMLImageElement;
+                                      target.style.display = 'none';
+                                      const fallback = document.createElement('div');
+                                      fallback.className = 'w-full h-full bg-gradient-to-br from-amber-600 to-amber-800';
+                                      target.parentNode?.insertBefore(fallback, target.nextSibling);
+                                    }}
+                                  />
+                                ) : (
+                                  <div className="w-full h-full bg-gradient-to-br from-amber-600 to-amber-800"></div>
+                                )}
                               </div>
                               <span className="text-sm font-medium text-gray-900">{product.name}</span>
                             </div>
@@ -1322,6 +1421,23 @@ export default function AdminDashboard() {
                     )}
                   </tbody>
                 </table>
+              </div>
+              <div className="flex justify-between items-center p-4">
+                <button 
+                  onClick={() => fetchProducts(currentPage - 1)} 
+                  disabled={currentPage === 1}
+                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Previous
+                </button>
+                <span className="text-sm text-gray-700">Page {currentPage}</span>
+                <button 
+                  onClick={() => fetchProducts(currentPage + 1)} 
+                  disabled={products.length < productsPerPage}
+                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Next
+                </button>
               </div>
             </div>
           </>
