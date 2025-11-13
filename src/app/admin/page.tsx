@@ -270,6 +270,8 @@ export default function AdminDashboard() {
   const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
   const [showAddProductModal, setShowAddProductModal] = useState(false);
   const [isMarkingAsShipped, setIsMarkingAsShipped] = useState<Record<string, boolean>>({});
+  const [isMarkingAsArrived, setIsMarkingAsArrived] = useState<Record<string, boolean>>({});
+  const [isMarkingAsPickedUp, setIsMarkingAsPickedUp] = useState<Record<string, boolean>>({});
   
   interface ShippingInfo {
     fullName?: string;
@@ -358,6 +360,8 @@ export default function AdminDashboard() {
     setActiveTab(tab);
   };
 
+  
+
   const handleMarkAsShipped = async (orderId: string) => {
     try {
       setIsMarkingAsShipped(prev => ({ ...prev, [orderId]: true }));
@@ -403,19 +407,136 @@ export default function AdminDashboard() {
             ? { 
                 ...order, 
                 status: 'Shipped',
-                // Update any other fields that might have changed
-                time: new Date() // Update the time to now
+                time: new Date()
+              } 
+            : order
+        )
+      );
+    } catch (error) {
+      console.error('Error marking order as shipped:', error);
+      // You might want to show an error toast here
+    } finally {
+      setIsMarkingAsShipped(prev => ({ ...prev, [orderId]: false }));
+    }
+  };
+
+  const handleMarkAsArrived = async (orderId: string) => {
+    try {
+      setIsMarkingAsArrived(prev => ({ ...prev, [orderId]: true }));
+      
+      // Get the order document reference
+      const orderRef = doc(db, 'orders', orderId);
+      const orderSnap = await getDoc(orderRef);
+      
+      if (!orderSnap.exists()) {
+        throw new Error('Order not found');
+      }
+      
+      const orderData = orderSnap.data();
+      const userId = orderData.userId;
+      
+      if (!userId) {
+        throw new Error('User ID not found in order');
+      }
+      
+      // Update the order status in Firestore
+      await updateDoc(orderRef, {
+        status: 'Delivered',
+        updatedAt: serverTimestamp(),
+        deliveredAt: serverTimestamp()
+      });
+      
+      // Create a notification for the user
+      const notificationRef = collection(db, 'notifications');
+      await addDoc(notificationRef, {
+        userId: userId,
+        type: 'order_delivered',
+        title: 'Order Delivered',
+        message: `Your order #${orderId} has been successfully delivered!`,
+        orderId: orderId,
+        isRead: false,
+        createdAt: serverTimestamp()
+      });
+      
+      // Update the local state
+      setOrders(prevOrders => 
+        prevOrders.map(order => 
+          order.id === orderId 
+            ? { 
+                ...order, 
+                status: 'Delivered',
+                time: new Date()
               } 
             : order
         )
       );
       
-      console.log(`Order ${orderId} marked as shipped and notification created`);
+      console.log(`Order ${orderId} marked as delivered and notification created`);
     } catch (error) {
-      console.error('Error marking order as shipped:', error);
-      // You might want to show an error toast/notification to the user here
+      console.error('Error marking order as arrived:', error);
+      // You might want to show an error toast here
     } finally {
-      setIsMarkingAsShipped(prev => ({ ...prev, [orderId]: false }));
+      setIsMarkingAsArrived(prev => ({ ...prev, [orderId]: false }));
+    }
+  };
+
+  const handleMarkAsPickedUp = async (orderId: string) => {
+    try {
+      setIsMarkingAsPickedUp(prev => ({ ...prev, [orderId]: true }));
+      
+      // Get the order document reference
+      const orderRef = doc(db, 'orders', orderId);
+      const orderSnap = await getDoc(orderRef);
+      
+      if (!orderSnap.exists()) {
+        throw new Error('Order not found');
+      }
+      
+      const orderData = orderSnap.data();
+      const userId = orderData.userId;
+      
+      if (!userId) {
+        throw new Error('User ID not found in order');
+      }
+      
+      // Update the order status in Firestore
+      await updateDoc(orderRef, {
+        status: 'Picked Up',
+        updatedAt: serverTimestamp(),
+        pickedUpAt: serverTimestamp()
+      });
+      
+      // Create a notification for the user
+      const notificationRef = collection(db, 'notifications');
+      await addDoc(notificationRef, {
+        userId: userId,
+        type: 'order_picked_up',
+        title: 'Order Picked Up',
+        message: `Your order #${orderId} has been successfully picked up!`,
+        orderId: orderId,
+        isRead: false,
+        createdAt: serverTimestamp()
+      });
+      
+      // Update the local state
+      setOrders(prevOrders => 
+        prevOrders.map(order => 
+          order.id === orderId 
+            ? { 
+                ...order, 
+                status: 'Picked Up',
+                time: new Date()
+              } 
+            : order
+        )
+      );
+      
+      console.log(`Order ${orderId} marked as picked up and notification created`);
+    } catch (error) {
+      console.error('Error marking order as picked up:', error);
+      // You might want to show an error toast here
+    } finally {
+      setIsMarkingAsPickedUp(prev => ({ ...prev, [orderId]: false }));
     }
   };
 
@@ -1466,7 +1587,7 @@ export default function AdminDashboard() {
                       </div>
                       <div className="flex items-center gap-4">
                         <span className="text-2xl font-bold text-gray-900">{order.amount}</span>
-                        {order.status !== 'Shipped' && (
+                        {!['Shipped', 'Delivered', 'Picked Up'].includes(order.status) && (
                           <button 
                             onClick={() => handleMarkAsShipped(order.id)}
                             disabled={isMarkingAsShipped[order.id]}
@@ -1480,8 +1601,31 @@ export default function AdminDashboard() {
                           </button>
                         )}
                         {order.status === 'Shipped' && (
+                          <div className="flex items-center gap-2">
+                            <button 
+                              onClick={() => handleMarkAsArrived(order.id)}
+                              disabled={isMarkingAsArrived[order.id]}
+                              className={`px-3 py-1 text-xs font-medium rounded-full transition-colors ${
+                                isMarkingAsArrived[order.id]
+                                  ? 'bg-gray-300 text-gray-600 cursor-not-allowed'
+                                  : 'bg-blue-600 text-white hover:bg-blue-700'
+                              }`}
+                            >
+                              {isMarkingAsArrived[order.id] ? 'Processing...' : 'Mark as Arrived'}
+                            </button>
+                            <span className="px-2 py-1 text-xs font-medium text-green-800 bg-green-100 rounded-full">
+                              Shipped
+                            </span>
+                          </div>
+                        )}
+                        {order.status === 'Delivered' && (
+                          <span className="px-3 py-1 text-xs font-medium text-purple-800 bg-purple-100 rounded-full">
+                            Delivered
+                          </span>
+                        )}
+                        {order.status === 'Picked Up' && (
                           <span className="px-3 py-1 text-xs font-medium text-green-800 bg-green-100 rounded-full">
-                            Shipped
+                            Picked Up
                           </span>
                         )}
                       </div>

@@ -1,9 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { ShoppingBag, ArrowRight } from 'lucide-react';
+import { collection, query, limit, getDocs } from 'firebase/firestore';
+import { db } from '@/firebase/config';
 
 interface Product {
   id: string;
@@ -11,10 +13,13 @@ interface Product {
   price: number;
   image: string;
   category: string;
+  status?: string;
 }
 
 export default function ProductsPreviewSection() {
   const [activeCategory, setActiveCategory] = useState('All');
+  const [products, setProducts] = useState<Product[]>([]);
+  const [loading, setLoading] = useState(true);
 
   const categories = [
     'All',
@@ -26,51 +31,43 @@ export default function ProductsPreviewSection() {
     'Bonsel'
   ];
 
-  // Sample products - replace with actual data
-  const products: Product[] = [
-    {
-      id: '1',
-      name: 'Bamboo Mug',
-      price: 120.00,
-      image: '/products/bamboo-mug.jpg',
-      category: 'Wood Crafts'
-    },
-    {
-      id: '2',
-      name: 'Woven Storage Basket',
-      price: 150.00,
-      image: '/products/woven-basket.jpg',
-      category: 'Bags & Purses'
-    },
-    {
-      id: '3',
-      name: 'Recycled Paper Journal',
-      price: 180.00,
-      image: '/products/paper-journal.jpg',
-      category: 'Paper Crafts'
-    },
-    {
-      id: '4',
-      name: 'Handcrafted Keychain',
-      price: 100.00,
-      image: '/products/keychain.jpg',
-      category: 'Wood Crafts'
-    },
-    {
-      id: '5',
-      name: 'Wooden Desk Organizer',
-      price: 450.00,
-      image: '/products/desk-organizer.jpg',
-      category: 'Wood Crafts'
-    },
-    {
-      id: '6',
-      name: 'Woven Tote Bag',
-      price: 300.00,
-      image: '/products/tote-bag.jpg',
-      category: 'Bags & Purses'
-    }
-  ];
+  // Fetch first 8 products from Firestore
+  useEffect(() => {
+    const fetchProducts = async () => {
+      try {
+        setLoading(true);
+        
+        // Create a query that gets the first 8 items
+        const itemsQuery = query(
+          collection(db, 'items'),
+          limit(8)
+        );
+        
+        const querySnapshot = await getDocs(itemsQuery);
+        
+        // Process the documents
+        const productsData = querySnapshot.docs.map((doc) => {
+          const data = doc.data();
+          return {
+            id: doc.id,
+            name: data.name || 'Unnamed Product',
+            price: Number(data.price) || 0,
+            image: data.image || 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHBhdGggZmlsbD0iIzljYTVhZSIgZD0iTTE5IDV2MTRIMVY1aDhtMC0yaC0yYTEgMSAwIDAwLTEgMXYxNmExIDEgMCAwMDEgMWgyMmExIDEgMCAwMDEtMVY0YTEgMSAwIDAwLTEtMWgtNmwtMi0yaC00bC0yIDJIN3ptLTcgNGgxMHY0SDEydjRINnYtNHoiLz48L3N2Zz4=',
+            category: data.category || 'Uncategorized',
+            status: data.status || 'active'
+          };
+        });
+        
+        setProducts(productsData);
+      } catch (error) {
+        console.error('Error fetching products:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchProducts();
+  }, []);
 
   const filteredProducts = activeCategory === 'All' 
     ? products 
@@ -114,45 +111,60 @@ export default function ProductsPreviewSection() {
         </div>
 
         {/* Products Grid */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 gap-4 lg:gap-6">
-          {filteredProducts.map((product) => (
-            <div key={product.id} className="group">
-              {/* Product Image */}
-              <div className="relative aspect-square rounded-xl overflow-hidden bg-gray-200 mb-3">
-                <div className="absolute inset-0 bg-gray-300 flex items-center justify-center">
-                  <span className="text-gray-400 text-xs">Product Image</span>
-                </div>
-                {/* Uncomment when images are available */}
-                {/* <Image
-                  src={product.image}
-                  alt={product.name}
-                  fill
-                  className="object-cover group-hover:scale-105 transition-transform duration-300"
-                /> */}
+        {loading ? (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 gap-4 lg:gap-6">
+            {[...Array(4)].map((_, i) => (
+              <div key={i} className="animate-pulse">
+                <div className="aspect-square rounded-xl bg-gray-200 mb-3"></div>
+                <div className="h-4 bg-gray-200 rounded w-3/4 mb-2"></div>
+                <div className="h-4 bg-gray-200 rounded w-1/2"></div>
               </div>
-
-              {/* Product Info */}
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <h3 className="text-sm sm:text-base font-bold text-gray-900 mb-1 truncate">
-                    {product.name}
-                  </h3>
-                  <p className="text-sm sm:text-base text-gray-900">
-                    ₱{product.price.toFixed(2)}
-                  </p>
+            ))}
+          </div>
+        ) : filteredProducts.length > 0 ? (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 gap-4 lg:gap-6">
+            {filteredProducts.map((product) => (
+              <div key={product.id} className="group">
+                {/* Product Image */}
+                <div className="relative aspect-square rounded-xl overflow-hidden bg-gray-200 mb-3">
+                  <Image
+                    src={product.image || 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHBhdGggZmlsbD0iIzljYTVhZSIgZD0iTTE5IDV2MTRIMVY1aDhtMC0yaC0yYTEgMSAwIDAwLTEgMXYxNmExIDEgMCAwMDEgMWgyMmExIDEgMCAwMDEtMVY0YTEgMSAwIDAwLTEtMWgtNmwtMi0yaC00bC0yIDJIN3ptLTcgNGgxMHY0SDEydjRINnYtNHoiLz48L3N2Zz4='}
+                    alt={product.name}
+                    fill
+                    className="object-cover group-hover:scale-105 transition-transform duration-300"
+                    onError={(e) => {
+                      const target = e.target as HTMLImageElement;
+                      target.onerror = null;
+                      target.src = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHBhdGggZmlsbD0iIzljYTVhZSIgZD0iTTE5IDV2MTRIMVY1aDhtMC0yaC0yYTEgMSAwIDAwLTEgMXYxNmExIDEgMCAwMDEgMWgyMmExIDEgMCAwMDEtMVY0YTEgMSAwIDAwLTEtMWgtNmwtMi0yaC00bC0yIDJIN3ptLTcgNGgxMHY0SDEydjRINnYtNHoiLz48L3N2Zz4=';
+                    }}
+                  />
                 </div>
 
-                {/* Add to Cart Button */}
-                <button
-                  className="shrink-0 w-9 h-9 rounded-full border-2 border-gray-900 flex items-center justify-center hover:bg-gray-900 hover:text-white transition-all"
-                  aria-label={`Add ${product.name} to cart`}
-                >
-                  <ShoppingBag className="h-4 w-4" />
-                </button>
+                {/* Product Info */}
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <h3 className="text-sm sm:text-base font-bold text-gray-900 mb-1 truncate">
+                      {product.name}
+                    </h3>
+                    <p className="text-sm sm:text-base text-gray-900">
+                      ₱{product.price.toFixed(2)}
+                    </p>
+                  </div>
+                  <button
+                    className="shrink-0 w-9 h-9 rounded-full border-2 border-gray-900 flex items-center justify-center hover:bg-gray-900 hover:text-white transition-all"
+                    aria-label={`Add ${product.name} to cart`}
+                  >
+                    <ShoppingBag className="h-4 w-4" />
+                  </button>
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        ) : (
+          <div className="text-center py-12">
+            <p className="text-gray-500">No products found. Please check back later.</p>
+          </div>
+        )}
       </div>
 
       <style jsx>{`
