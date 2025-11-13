@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
-import { ChevronDown, ChevronUp } from 'lucide-react';
-import {
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { 
+  ChevronDown, 
+  ChevronUp,
   LayoutDashboard,
   Package,
   ShoppingCart,
@@ -13,6 +14,7 @@ import {
   ShoppingBag,
   Star,
   ArrowRight,
+  Search as SearchIcon,
   Search,
   Filter,
   Edit2,
@@ -23,8 +25,42 @@ import {
   X
 } from 'lucide-react';
 import { db } from '@/firebase/config';
-import { collection, getDocs, getDoc, doc, query, orderBy, limit, where, getCountFromServer, updateDoc, deleteDoc, addDoc, serverTimestamp } from 'firebase/firestore';
+import { 
+  collection, 
+  getDocs, 
+  getDoc, 
+  doc, 
+  query, 
+  orderBy, 
+  limit, 
+  where, 
+  getCountFromServer, 
+  updateDoc, 
+  deleteDoc, 
+  addDoc, 
+  serverTimestamp,
+  DocumentData
+} from 'firebase/firestore';
+import { Line } from 'react-chartjs-2';
+import { Bar } from 'react-chartjs-2';
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  BarElement,
+  Title,
+  Tooltip,
+  Legend,
+  Filler,
+  ChartData,
+  ChartOptions,
+  TooltipItem,
+  ChartType
+} from 'chart.js';
 
+// Define all interfaces at the top level
 interface Product {
   id: string;
   name: string;
@@ -36,16 +72,89 @@ interface Product {
   image: string;
 }
 
+interface OrderItem {
+  id: string;
+  name: string;
+  price: number;
+  quantity: number;
+  image?: string;
+}
+
+interface ShippingInfo {
+  fullName?: string;
+  streetAddress?: string;
+  city?: string;
+  province?: string;
+  zipCode?: string;
+  phoneNumber?: string;
+  email?: string;
+  deliveryNotes?: string;
+}
+
 interface Order {
   id: string;
   customer: string;
-  items: number;
+  items: OrderItem[];
   payment: string;
   date: string;
-  time: string;
+  time: string | Date;
   amount: string;
-  status: 'Pending' | 'Ready for Pickup' | 'Completed';
+  status: 'Pending' | 'Shipped' | 'Delivered' | 'Picked Up' | 'Completed' | 'Processing' | 'Ready for Pickup' | 'Placed' | 'Delivery';
+  shippingInfo?: ShippingInfo;
+  customerName?: string;
+  paymentMethod?: string;
+  createdAt?: {
+    toDate: () => Date;
+  };
+  total?: number;
 }
+
+interface TopProduct {
+  id: string;
+  name: string;
+  facility: string;
+  sold: number;
+  price: string;
+  image: string;
+  orderCount: number;
+}
+
+interface MenuItem {
+  id: string;
+  label: string;
+  icon: React.ElementType;
+  tab: 'dashboard' | 'products' | 'orders' | 'settings';
+}
+
+// Extend the ChartData interface to include our custom properties
+interface CustomChartData extends ChartData {
+  datasets: Array<{
+    label?: string;
+    data: number[];
+    backgroundColor?: string | string[];
+    borderColor?: string | string[];
+    borderWidth?: number;
+    hoverBackgroundColor?: string | string[];
+    hoverBorderColor?: string | string[];
+    [key: string]: any;
+  }>;
+}
+
+type ChartCallback = (value: number | string, index: number, values: any[]) => string;
+
+// Register ChartJS components
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  BarElement,
+  Title,
+  Tooltip,
+  Legend,
+  Filler
+);
+
 
 // Separate Modal Component
 const AddProductModal = ({ isOpen, onClose, onSave }: {
@@ -263,46 +372,36 @@ const AddProductModal = ({ isOpen, onClose, onSave }: {
 };
 
 export default function AdminDashboard() {
+  // UI State
   const [activeTab, setActiveTab] = useState<'dashboard' | 'products' | 'orders' | 'settings'>('dashboard');
   const [searchQuery, setSearchQuery] = useState('');
   const [orderSearchQuery, setOrderSearchQuery] = useState('');
   const [orderFilter, setOrderFilter] = useState<'all' | 'processing' | 'pickup' | 'delivered'>('all');
   const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
   const [showAddProductModal, setShowAddProductModal] = useState(false);
+  
+  // Data States
+  const [products, setProducts] = useState<Product[]>([]);
+  const [recentOrders, setRecentOrders] = useState<Order[]>([]);
+  const [topProducts, setTopProducts] = useState<TopProduct[]>([]);
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [loadingOrders, setLoadingOrders] = useState(false);
+  const [productsLoading, setProductsLoading] = useState(true);
+  
+  // Loading States
   const [isMarkingAsShipped, setIsMarkingAsShipped] = useState<Record<string, boolean>>({});
   const [isMarkingAsArrived, setIsMarkingAsArrived] = useState<Record<string, boolean>>({});
   const [isMarkingAsPickedUp, setIsMarkingAsPickedUp] = useState<Record<string, boolean>>({});
   
-  interface ShippingInfo {
-    fullName?: string;
-    streetAddress?: string;
-    city?: string;
-    province?: string;
-    zipCode?: string;
-    phoneNumber?: string;
-    email?: string;
-    deliveryNotes?: string;
-  }
+  // Menu items for sidebar navigation
+  const menuItems: MenuItem[] = [
+    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, tab: 'dashboard' },
+    { id: 'products', label: 'Products', icon: Package, tab: 'products' },
+    { id: 'orders', label: 'Orders', icon: ShoppingCart, tab: 'orders' },
+    { id: 'settings', label: 'Settings', icon: Settings, tab: 'settings' },
+  ];
 
-  interface Order {
-    id: string;
-    status: string;
-    items: string;
-    date: string;
-    amount: string;
-    customerName?: string;
-    paymentMethod?: string;
-    time?: Date;
-    shippingInfo?: ShippingInfo | ShippingInfo[];
-    createdAt?: {
-      toDate: () => Date;
-    };
-    total?: number;
-  }
-  
   // Orders state and fetching logic
-  const [orders, setOrders] = useState<Order[]>([]);
-  const [loadingOrders, setLoadingOrders] = useState(false);
 
   // Fetch orders when orders tab is active
   useEffect(() => {
@@ -314,11 +413,17 @@ export default function AdminDashboard() {
         const ordersQuery = query(collection(db, 'orders'), orderBy('createdAt', 'desc'));
         const querySnapshot = await getDocs(ordersQuery);
         
-        const ordersData = querySnapshot.docs.map(doc => {
+        const ordersData: Order[] = querySnapshot.docs.map(doc => {
           const data = doc.data();
-          const itemsText = Array.isArray(data.items) 
-            ? `${data.items.length} items`
-            : 'No items';
+          const items: OrderItem[] = Array.isArray(data.items) 
+            ? data.items.map((item: any) => ({
+                id: item.id || '',
+                name: item.name || 'Unknown Item',
+                price: Number(item.price) || 0,
+                quantity: Number(item.quantity) || 1,
+                image: item.image
+              }))
+            : [];
           
           // Get customer name from shippingInfo.fullName if available, otherwise fall back to other fields
           const customerName = data.shippingInfo?.fullName || 
@@ -326,17 +431,22 @@ export default function AdminDashboard() {
                              data.customer?.name || 
                              'Unknown Customer';
             
+          const orderDate = data.createdAt?.toDate() || new Date();
+          
           return {
             id: doc.id,
-            status: data.status || 'Placed',
-            items: itemsText,
-            date: data.createdAt?.toDate().toLocaleString() || new Date().toLocaleString(),
+            customer: customerName,
+            items: items,
+            payment: data.paymentMethod || data.payment?.method || 'Unknown',
+            date: orderDate.toLocaleDateString(),
+            time: orderDate.toLocaleTimeString(),
             amount: `₱${(data.total || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`,
+            status: data.status || 'Pending',
+            shippingInfo: data.shippingInfo || {},
             customerName: customerName,
             paymentMethod: data.paymentMethod || data.payment?.method || 'Unknown',
-            time: data.createdAt?.toDate() || new Date(),
-            // Include full shipping info for reference
-            shippingInfo: data.shippingInfo
+            createdAt: data.createdAt ? { toDate: () => new Date(data.createdAt.toDate()) } : undefined,
+            total: Number(data.total) || 0
           };
         });
         
@@ -362,541 +472,160 @@ export default function AdminDashboard() {
 
   
 
-  const handleMarkAsShipped = async (orderId: string) => {
+  const handleMarkAsShipped = useCallback(async (orderId: string) => {
     try {
       setIsMarkingAsShipped(prev => ({ ...prev, [orderId]: true }));
-      
-      // Get the order document reference
-      const orderRef = doc(db, 'orders', orderId);
-      const orderSnap = await getDoc(orderRef);
-      
-      if (!orderSnap.exists()) {
-        throw new Error('Order not found');
-      }
-      
-      const orderData = orderSnap.data();
-      const userId = orderData.userId; // Assuming the userId is stored in the order document
-      
-      if (!userId) {
-        throw new Error('User ID not found in order');
-      }
-      
-      // Update the order status in Firestore
-      await updateDoc(orderRef, {
+      // Update order status in Firestore
+      await updateDoc(doc(db, 'orders', orderId), {
         status: 'Shipped',
-        updatedAt: serverTimestamp(),
-        shippedAt: serverTimestamp()
+        time: new Date().toISOString()
       });
       
-      // Create a notification for the user
-      const notificationRef = collection(db, 'notifications');
-      await addDoc(notificationRef, {
-        userId: userId,
-        type: 'order_shipped',
-        title: 'Order Shipped',
-        message: `Your order #${orderId} has been shipped and is on its way!`,
-        orderId: orderId,
-        isRead: false,
-        createdAt: serverTimestamp()
-      });
-      
-      // Update the local state
-      setOrders(prevOrders => 
-        prevOrders.map(order => 
-          order.id === orderId 
+      // Update local state
+      setOrders(prevOrders =>
+        prevOrders.map(order =>
+          order.id === orderId
             ? { 
                 ...order, 
-                status: 'Shipped',
-                time: new Date()
-              } 
+                status: 'Shipped', 
+                time: new Date().toISOString(),
+                date: new Date().toLocaleDateString()
+              }
             : order
         )
       );
     } catch (error) {
       console.error('Error marking order as shipped:', error);
-      // You might want to show an error toast here
     } finally {
       setIsMarkingAsShipped(prev => ({ ...prev, [orderId]: false }));
     }
-  };
+  }, []);
 
-  const handleMarkAsArrived = async (orderId: string) => {
+  const handleMarkAsArrived = useCallback(async (orderId: string) => {
     try {
       setIsMarkingAsArrived(prev => ({ ...prev, [orderId]: true }));
-      
-      // Get the order document reference
-      const orderRef = doc(db, 'orders', orderId);
-      const orderSnap = await getDoc(orderRef);
-      
-      if (!orderSnap.exists()) {
-        throw new Error('Order not found');
-      }
-      
-      const orderData = orderSnap.data();
-      const userId = orderData.userId;
-      
-      if (!userId) {
-        throw new Error('User ID not found in order');
-      }
-      
-      // Update the order status in Firestore
-      await updateDoc(orderRef, {
+      // Update order status in Firestore
+      await updateDoc(doc(db, 'orders', orderId), {
         status: 'Delivered',
-        updatedAt: serverTimestamp(),
-        deliveredAt: serverTimestamp()
+        time: new Date().toISOString()
       });
       
-      // Create a notification for the user
-      const notificationRef = collection(db, 'notifications');
-      await addDoc(notificationRef, {
-        userId: userId,
-        type: 'order_delivered',
-        title: 'Order Delivered',
-        message: `Your order #${orderId} has been successfully delivered!`,
-        orderId: orderId,
-        isRead: false,
-        createdAt: serverTimestamp()
-      });
-      
-      // Update the local state
-      setOrders(prevOrders => 
-        prevOrders.map(order => 
-          order.id === orderId 
+      // Update local state
+      setOrders(prevOrders =>
+        prevOrders.map(order =>
+          order.id === orderId
             ? { 
                 ...order, 
-                status: 'Delivered',
-                time: new Date()
-              } 
+                status: 'Delivered', 
+                time: new Date().toISOString(),
+                date: new Date().toLocaleDateString()
+              }
             : order
         )
       );
-      
-      console.log(`Order ${orderId} marked as delivered and notification created`);
     } catch (error) {
       console.error('Error marking order as arrived:', error);
-      // You might want to show an error toast here
     } finally {
       setIsMarkingAsArrived(prev => ({ ...prev, [orderId]: false }));
     }
-  };
-
-  const handleMarkAsPickedUp = async (orderId: string) => {
-    try {
-      setIsMarkingAsPickedUp(prev => ({ ...prev, [orderId]: true }));
-      
-      // Get the order document reference
-      const orderRef = doc(db, 'orders', orderId);
-      const orderSnap = await getDoc(orderRef);
-      
-      if (!orderSnap.exists()) {
-        throw new Error('Order not found');
-      }
-      
-      const orderData = orderSnap.data();
-      const userId = orderData.userId;
-      
-      if (!userId) {
-        throw new Error('User ID not found in order');
-      }
-      
-      // Update the order status in Firestore
-      await updateDoc(orderRef, {
-        status: 'Picked Up',
-        updatedAt: serverTimestamp(),
-        pickedUpAt: serverTimestamp()
-      });
-      
-      // Create a notification for the user
-      const notificationRef = collection(db, 'notifications');
-      await addDoc(notificationRef, {
-        userId: userId,
-        type: 'order_picked_up',
-        title: 'Order Picked Up',
-        message: `Your order #${orderId} has been successfully picked up!`,
-        orderId: orderId,
-        isRead: false,
-        createdAt: serverTimestamp()
-      });
-      
-      // Update the local state
-      setOrders(prevOrders => 
-        prevOrders.map(order => 
-          order.id === orderId 
-            ? { 
-                ...order, 
-                status: 'Picked Up',
-                time: new Date()
-              } 
-            : order
-        )
-      );
-      
-      console.log(`Order ${orderId} marked as picked up and notification created`);
-    } catch (error) {
-      console.error('Error marking order as picked up:', error);
-      // You might want to show an error toast here
-    } finally {
-      setIsMarkingAsPickedUp(prev => ({ ...prev, [orderId]: false }));
-    }
-  };
-
-  const menuItems: Array<{
-    id: 'dashboard' | 'products' | 'orders' | 'settings';
-    label: string;
-    icon: any;
-  }> = [
-    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-    { id: 'products', label: 'Products', icon: Package },
-    { id: 'orders', label: 'Orders', icon: ShoppingCart },
-    { id: 'settings', label: 'Settings', icon: Settings },
-  ];
-
-  // Live stats (loaded from Firestore)
-  const [loadingStats, setLoadingStats] = useState(true);
-  const [totalRevenue, setTotalRevenue] = useState<number | null>(null);
-  const [totalOrdersCount, setTotalOrdersCount] = useState<number | null>(null);
-  const [totalProductsCount, setTotalProductsCount] = useState<number | null>(null);
-  const [totalReviewsCount, setTotalReviewsCount] = useState<number | null>(null);
-
-  const formatCurrency = (n: number | null) => {
-    if (n === null) return '—';
-    return `₱${n.toLocaleString()}`;
-  };
-
-  useEffect(() => {
-    let mounted = true;
-
-    const fetchStats = async () => {
-      try {
-        // Counts using getCountFromServer for efficiency
-        const ordersCountSnap = await getCountFromServer(collection(db, 'orders'));
-        const ordersCount = ordersCountSnap.data().count ?? 0;
-
-        const itemsCountSnap = await getCountFromServer(collection(db, 'items'));
-        const itemsCount = itemsCountSnap.data().count ?? 0;
-
-        // reviews collection may not exist in this project; attempt to count and fallback to 0
-        let reviewsCount = 0;
-        try {
-          const reviewsCountSnap = await getCountFromServer(collection(db, 'reviews'));
-          reviewsCount = reviewsCountSnap.data().count ?? 0;
-        } catch (err) {
-          reviewsCount = 0;
-        }
-
-        // Sum revenue from orders collection. Orders are expected to have a numeric `total` field.
-        let revenue = 0;
-        const ordersSnap = await getDocs(collection(db, 'orders'));
-        ordersSnap.forEach((d) => {
-          const data = d.data() as any;
-          const val = data.total ?? data.totalAmount ?? data.subtotal ?? 0;
-          const num = typeof val === 'number' ? val : Number(val) || 0;
-          revenue += num;
-        });
-
-        // Fetch recent orders (limit 5) ordered by createdAt if available
-        try {
-          const recentQ = query(collection(db, 'orders'), orderBy('createdAt', 'desc'), limit(5));
-          const recentSnap = await getDocs(recentQ);
-          const recs = recentSnap.docs.map((d) => {
-            const data = d.data() as any;
-            const id = data.orderId ?? d.id;
-            const status = typeof data.status === 'string' ? data.status : (data.state ?? 'Placed');
-            const itemsDesc = Array.isArray(data.items)
-              ? `${data.items.length} items`
-              : (typeof data.items === 'string' ? data.items : JSON.stringify(data.items ?? ''));
-            const createdAt = data.createdAt && typeof data.createdAt.toDate === 'function'
-              ? data.createdAt.toDate().toLocaleString()
-              : (data.createdAt ?? '');
-            const amountStr = typeof data.total === 'number'
-              ? `₱${data.total.toLocaleString()}`
-              : (data.total ?? data.totalAmount ?? data.subtotal ?? '₱0.00');
-            return {
-              id,
-              status,
-              items: itemsDesc,
-              date: createdAt,
-              amount: amountStr
-            };
-          });
-          if (mounted) setRecentOrders(recs);
-        } catch (err) {
-          // fallback: leave static recentOrders
-          console.warn('Could not fetch recent orders:', err);
-        }
-
-        // Fetch top selling products based on orders
-        try {
-          // First, count how many orders contain each product
-          const productOrderCounts = new Map<string, number>();
-          const allOrdersSnap = await getDocs(collection(db, 'orders'));
-          allOrdersSnap.forEach(orderDoc => {
-            const orderData = orderDoc.data();
-            if (orderData.items && Array.isArray(orderData.items)) {
-              orderData.items.forEach((item: any) => {
-                const productId = item.productId || item.id;
-                if (productId) {
-                  productOrderCounts.set(
-                    productId, 
-                    (productOrderCounts.get(productId) || 0) + 1
-                  );
-                }
-              });
-            }
-          });
-          
-          // Then get the first 10 orders to determine top selling products
-          const ordersQuery = query(
-            collection(db, 'orders'),
-            orderBy('createdAt', 'asc'),
-            limit(10) // Get first 10 orders as a sample
-          );
-          
-          const ordersSnap = await getDocs(ordersQuery);
-          const productSales = new Map<string, {count: number, lastOrderDate: Date}>();
-          
-          // Count sales per product from the first orders
-          ordersSnap.forEach(doc => {
-            const order = doc.data();
-            if (order.items && Array.isArray(order.items)) {
-              order.items.forEach((item: any) => {
-                const productId = item.productId || item.id;
-                if (productId) {
-                  const current = productSales.get(productId) || { count: 0, lastOrderDate: new Date(0) };
-                  productSales.set(productId, {
-                    count: current.count + (item.quantity || 1),
-                    lastOrderDate: order.createdAt?.toDate() > current.lastOrderDate 
-                      ? order.createdAt.toDate() 
-                      : current.lastOrderDate
-                  });
-                }
-              });
-            }
-          });
-
-          // Convert to array and sort by sales count (descending)
-          const topSelling = Array.from(productSales.entries())
-            .sort((a, b) => b[1].count - a[1].count)
-            .slice(0, 3); // Get top 3
-
-          // Fetch product details for the top selling items
-          const productPromises = topSelling.map(async ([productId, salesData]) => {
-            const productDoc = await getDoc(doc(db, 'items', productId));
-            if (!productDoc.exists()) return null;
-            
-            const data = productDoc.data();
-            const name = data.name ?? data.title ?? productId;
-            const facility = data.facility ?? data.location ?? 'Unknown';
-            
-            // Handle price from Firestore (stored as string)
-            let price = '₱0.00';
-            if (data.price) {
-              // If price is a string, ensure it has proper formatting
-              if (typeof data.price === 'string') {
-                // Remove any existing currency symbol and extra spaces
-                const cleanPrice = data.price.replace(/[^0-9.]/g, '');
-                const numericValue = parseFloat(cleanPrice);
-                if (!isNaN(numericValue)) {
-                  price = `₱${numericValue.toLocaleString(undefined, {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2
-                  })}`;
-                } else {
-                  price = `₱${data.price.trim()}`; // Fallback to raw string if parsing fails
-                }
-              } else if (typeof data.price === 'number') {
-                // Handle if price is stored as number (just in case)
-                price = `₱${data.price.toLocaleString(undefined, {
-                  minimumFractionDigits: 2,
-                  maximumFractionDigits: 2
-                })}`;
-              }
-            } else if (data.priceText) {
-              // Fallback to priceText if price is not available
-              price = data.priceText.startsWith('₱') ? data.priceText : `₱${data.priceText}`;
-            }
-            
-            return {
-              id: productId,
-              name,
-              facility,
-              sold: salesData.count,
-              price,
-              image: data.image || data.imageUrl || data.thumbnail || '/product-placeholder.jpg',
-              orderCount: productOrderCounts.get(productId) || 0,
-              lastOrderDate: salesData.lastOrderDate
-            } as TopProduct;
-          });
-
-          const topProducts = (await Promise.all(productPromises)).filter(Boolean) as TopProduct[];
-          
-          if (mounted && topProducts.length) {
-            setTopProducts(topProducts);
-          }
-        } catch (err) {
-          console.warn('Could not fetch top products:', err);
-        }
-
-        if (!mounted) return;
-        setTotalOrdersCount(ordersCount);
-        setTotalProductsCount(itemsCount);
-        setTotalReviewsCount(reviewsCount);
-        setTotalRevenue(revenue);
-      } catch (err) {
-        console.error('Error fetching admin stats:', err);
-      } finally {
-        if (mounted) setLoadingStats(false);
-      }
-    };
-
-    fetchStats();
-    return () => {
-      mounted = false;
-    };
   }, []);
 
-  const stats = [
-    {
-      label: 'Total Revenue',
-      value: formatCurrency(totalRevenue),
-      sublabel: 'Total revenue (all time)',
-      icon: DollarSign,
-      bgColor: 'bg-blue-50',
-      iconColor: 'text-blue-600'
-    },
-    {
-      label: 'Total Orders',
-      value: totalOrdersCount === null ? '—' : totalOrdersCount.toLocaleString(),
-      sublabel: 'Total Orders',
-      icon: ShoppingBag,
-      bgColor: 'bg-green-50',
-      iconColor: 'text-green-600'
-    },
-    {
-      label: 'Total Product Listings',
-      value: totalProductsCount === null ? '—' : totalProductsCount.toLocaleString(),
-      sublabel: 'Total Product Listings',
-      icon: Package,
-      bgColor: 'bg-purple-50',
-      iconColor: 'text-purple-600'
-    },
-    {
-      label: 'Total Reviews',
-      value: totalReviewsCount === null ? '—' : totalReviewsCount.toLocaleString(),
-      sublabel: 'Total Reviews',
-      icon: Star,
-      bgColor: 'bg-orange-50',
-      iconColor: 'text-orange-600'
-    }
-  ];
-
-  // Recent orders (initial static fallback, replaced by Firestore data when available)
-  const [recentOrders, setRecentOrders] = useState<Array<{id: string; status: string; items: string; date: string; amount: string;}>>([
-    {
-      id: '#BJ-2024-166',
-      status: 'Delivery',
-      items: 'Bags, Mugs, Clay - 3 items',
-      date: 'Nov 8, 2024',
-      amount: '₱850.00'
-    },
-    {
-      id: '#BJ-2024-165',
-      status: 'Placed',
-      items: 'Mugs, Woven - 2 items',
-      date: 'Nov 8, 2024',
-      amount: '₱500.00'
-    },
-    {
-      id: '#BJ-2024-164',
-      status: 'Pending',
-      items: 'Plates, Woven - 2 items',
-      date: 'Nov 8, 2024',
-      amount: '₱180.00'
-    }
-  ]);
-
-  // Define the TopProduct interface
-  interface TopProduct {
-    id: string;
-    name: string;
-    facility: string;
-    sold: number;
-    price: string;
-    image: string;
-    orderCount: number;
-    lastOrderDate?: Date;
+  // Analytics chart state
+  interface ChartDataPoint {
+    month: string;
+    value: number;
+    amount?: string;
+    count?: number;
   }
 
-  // Top products (initial static fallback, replaced by Firestore data when available)
-  const [topProducts, setTopProducts] = useState<TopProduct[]>([
-    { 
-      id: '1',
-      name: 'Bamboo Mug', 
-      facility: 'Baguio City Jail', 
-      sold: 89, 
-      price: '₱71,290',
-      image: '/product-placeholder.jpg',
-      orderCount: 0
-    },
-    { 
-      id: '2',
-      name: 'Bamboo Mug', 
-      facility: 'Baguio City Jail', 
-      sold: 89, 
-      price: '₱71,290',
-      image: '/product-placeholder.jpg',
-      orderCount: 0
-    },
-    { 
-      id: '3',
-      name: 'Bamboo Mug', 
-      facility: 'Baguio City Jail', 
-      sold: 89, 
-      price: '₱71,290',
-      image: '/product-placeholder.jpg',
-      orderCount: 0
-    }
-  ]);
+  interface ChartDataState {
+    labels: string[];
+    values: number[];
+    amounts: string[];
+  }
 
-  const [products, setProducts] = useState<Product[]>([]);
-  const [productsLoading, setProductsLoading] = useState(true);
+  const [revenueChartData, setRevenueChartData] = useState<ChartDataState>({ labels: [], values: [], amounts: [] });
+  const [ordersChartData, setOrdersChartData] = useState<ChartDataState>({ labels: [], values: [], amounts: [] });
+  const [analyticsLoading, setAnalyticsLoading] = useState(true);
 
-  // Fetch products from Firestore
+  // Fetch revenue data from orders
   useEffect(() => {
-    const fetchProducts = async () => {
+    const fetchRevenueData = async () => {
       try {
-        const productsCollection = collection(db, 'items');
-        const q = query(productsCollection, where('status', '==', 'active'));
-        const querySnapshot = await getDocs(q);
+        setAnalyticsLoading(true);
         
-        const productsData = querySnapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data(),
-          // Ensure all required fields have default values if missing
-          name: doc.data().name || 'Unnamed Product',
-          category: doc.data().category || 'Uncategorized',
-          facility: doc.data().facility || 'No Facility',
-          price: doc.data().price || '₱0',
-          stock: doc.data().stock || 0,
-          status: doc.data().status || 'inactive',
-          image: doc.data().image || '/product-placeholder.jpg'
-        })) as Product[];
+        // Get current date and calculate last 6 months
+        const now = new Date();
+        const months = [];
+        const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
         
-        setProducts(productsData);
+        // Initialize data for last 6 months
+        const revenueByMonth: Record<string, { total: number; count: number }> = {};
+        for (let i = 5; i >= 0; i--) {
+          const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
+          const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+          const monthName = `${monthNames[date.getMonth()]} '${String(date.getFullYear()).slice(-2)}`;
+          months.push({ month: monthName, key: monthKey });
+          revenueByMonth[monthKey] = { total: 0, count: 0 };
+        }
+
+        // Fetch all orders with their items
+        const ordersRef = collection(db, 'orders');
+        const ordersSnapshot = await getDocs(ordersRef);
+        
+        // Process each order
+        for (const doc of ordersSnapshot.docs) {
+          const order = doc.data();
+          if (order.createdAt && order.items && Array.isArray(order.items)) {
+            const orderDate = order.createdAt.toDate();
+            const monthKey = `${orderDate.getFullYear()}-${String(orderDate.getMonth() + 1).padStart(2, '0')}`;
+            
+            // Only process orders from the last 6 months
+            if (revenueByMonth[monthKey]) {
+              // Calculate total from items if available, otherwise use order.total
+              let orderTotal = 0;
+              if (order.items && order.items.length > 0) {
+                orderTotal = order.items.reduce((sum: number, item: any) => {
+                  return sum + (parseFloat(item.price) * (item.quantity || 1));
+                }, 0);
+              } else if (order.total) {
+                orderTotal = parseFloat(order.total) || 0;
+              }
+              
+              revenueByMonth[monthKey].total += orderTotal;
+              revenueByMonth[monthKey].count += 1;
+            }
+          }
+        }
+
+        // Format the data for the charts
+        const labels = months.map(({ month }) => month);
+        const revenueValues = months.map(({ key }) => (revenueByMonth[key]?.total || 0));
+        const orderValues = months.map(({ key }) => (revenueByMonth[key]?.count || 0));
+        const amounts = months.map(({ key }) => 
+          `₱${(revenueByMonth[key]?.total || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+        );
+
+        setRevenueChartData({
+          labels,
+          values: revenueValues,
+          amounts
+        });
+
+        setOrdersChartData({
+          labels: months.map(({ month }) => month.split(' ')[0]),
+          values: orderValues,
+          amounts: orderValues.map(val => `${val} orders`)
+        });
       } catch (error) {
-        console.error('Error fetching products:', error);
+        console.error('Error fetching revenue data:', error);
       } finally {
-        setProductsLoading(false);
+        setAnalyticsLoading(false);
       }
     };
 
-    fetchProducts();
+    fetchRevenueData();
   }, []);
-
-  // Analytics chart state (will be populated from Firestore)
-  const [revenueData, setRevenueData] = useState<{ month: string; value: number }[]>([]);
-  const [ordersData, setOrdersData] = useState<{ month: string; value: number }[]>([]);
-  const [analyticsLoading, setAnalyticsLoading] = useState(true);
 
   // Sales by category (pie/donut) - default fallback preserved
   const [categoryDataState, setCategoryDataState] = useState(
@@ -983,10 +712,7 @@ export default function AdminDashboard() {
           console.warn('Could not fetch items for category analytics:', err);
         }
 
-        if (mounted) {
-          setRevenueData(revenueArr);
-          setOrdersData(ordersArr);
-        }
+        // Data is now handled by the separate chart data states
       } catch (err) {
         console.error('Error fetching analytics:', err);
       } finally {
@@ -1049,9 +775,6 @@ export default function AdminDashboard() {
     }
   };
 
-  // Compute maxima for charts to scale bar heights safely
-  const maxRevenue = Math.max(...revenueData.map((r) => r.value), 1);
-  const maxOrders = Math.max(...ordersData.map((r) => r.value), 1);
 
   return (
     <div className="min-h-screen flex bg-gray-50">
@@ -1079,7 +802,7 @@ export default function AdminDashboard() {
               return (
                 <button
                   key={item.id}
-                  onClick={() => setActiveTab(item.id)}
+                  onClick={() => setActiveTab(item.tab)}
                   className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${
                     activeTab === item.id
                       ? 'bg-black text-white'
@@ -1114,22 +837,29 @@ export default function AdminDashboard() {
                   </div>
                 </div>
               </div>
-              <p className="text-gray-600">Here's what's happening with your store today.</p>
             </div>
 
-            {/* Stats Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-              {stats.map((stat, index) => {
+            {/* Stats Overview */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+              {[
+                { name: 'Total Revenue', value: '₱45,231', change: '+8.2%', changeType: 'increase', icon: DollarSign, iconColor: 'text-green-500' },
+                { name: 'Total Orders', value: '1,234', change: '+12%', changeType: 'increase', icon: ShoppingCart, iconColor: 'text-blue-500' },
+                { name: 'New Customers', value: '45', change: '+3.1%', changeType: 'increase', icon: User, iconColor: 'text-indigo-500' },
+                { name: 'Avg. Order Value', value: '₱2,345', change: '-2.3%', changeType: 'decrease', icon: ShoppingBag, iconColor: 'text-red-500' }
+              ].map((stat, index) => {
                 const Icon = stat.icon;
                 return (
                   <div key={index} className="bg-white rounded-2xl p-6 border border-gray-200">
-                    <div className="flex items-center justify-between mb-4">
-                      <div className={`w-12 h-12 ${stat.bgColor} rounded-xl flex items-center justify-center`}>
-                        <Icon className={`w-6 h-6 ${stat.iconColor}`} />
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="text-sm font-medium text-gray-600">{stat.name}</div>
+                      <div className={`w-10 h-10 rounded-full flex items-center justify-center ${stat.changeType === 'increase' ? 'bg-green-100' : 'bg-red-100'}`}>
+                        <Icon className={`w-5 h-5 ${stat.changeType === 'increase' ? 'text-green-600' : 'text-red-600'}`} />
                       </div>
                     </div>
-                    <div className="text-2xl font-bold text-gray-900 mb-1">{stat.value}</div>
-                    <div className="text-sm text-gray-600">{stat.sublabel}</div>
+                    <div className="text-3xl font-bold text-gray-900 mb-1">{stat.value}</div>
+                    <div className={`text-sm font-medium ${stat.changeType === 'increase' ? 'text-green-600' : 'text-red-600'}`}>
+                      {stat.change}
+                    </div>
                   </div>
                 );
               })}
@@ -1162,7 +892,7 @@ export default function AdminDashboard() {
                             {order.status}
                           </span>
                         </div>
-                        <div className="text-xs text-gray-600 mb-1">{order.items}</div>
+                        <div className="text-xs text-gray-600 mb-1">{Array.isArray(order.items) ? `${order.items.length} items` : order.items}</div>
                         <div className="text-xs text-gray-500">{order.date}</div>
                       </div>
                       <div className="flex items-center gap-3">
@@ -1179,27 +909,31 @@ export default function AdminDashboard() {
               {/* Top Selling Products */}
               <div className="bg-white rounded-2xl p-6 border border-gray-200">
                 <h2 className="text-xl font-bold text-gray-900 mb-6">Top Selling Products</h2>
-                <div className="grid grid-cols-3 gap-4">
-                  {topProducts.map((product, index) => (
-                    <div key={index} className="text-center">
-                      <div className="aspect-square bg-gray-100 rounded-xl mb-3 overflow-hidden">
-                        <img 
-                          src={product.image || '/product-placeholder.jpg'} 
-                          alt={product.name}
-                          className="w-full h-full object-cover"
-                          onError={(e) => {
-                            const target = e.target as HTMLImageElement;
-                            target.onerror = null;
-                            target.src = '/product-placeholder.jpg';
-                          }}
-                        />
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+                  {Array.isArray(topProducts) ? (
+                    topProducts.map((product) => (
+                      <div key={product.id} className="bg-white p-4 rounded-xl border border-gray-200 hover:shadow-md transition-shadow">
+                        <div className="aspect-square w-full rounded-lg overflow-hidden bg-gray-100 mb-3">
+                          <img 
+                            src={product.image || '/product-placeholder.jpg'} 
+                            alt={product.name}
+                            className="w-full h-full object-cover"
+                            onError={(e) => {
+                              const target = e.target as HTMLImageElement;
+                              target.onerror = null;
+                              target.src = '/product-placeholder.jpg';
+                            }}
+                          />
+                        </div>
+                        <h3 className="text-sm font-bold text-gray-900 mb-1">{product.name}</h3>
+                        <p className="text-xs text-gray-600 mb-2">{product.facility}</p>
+                        <p className="text-xs text-gray-500 mb-1">{product.orderCount} Orders • {product.sold} Sold</p>
+                        <p className="text-sm font-bold text-gray-900">{product.price}</p>
                       </div>
-                      <h3 className="text-sm font-bold text-gray-900 mb-1">{product.name}</h3>
-                      <p className="text-xs text-gray-600 mb-2">{product.facility}</p>
-                      <p className="text-xs text-gray-500 mb-1">{product.orderCount} Orders • {product.sold} Sold</p>
-                      <p className="text-sm font-bold text-gray-900">{product.price}</p>
-                    </div>
-                  ))}
+                    ))
+                  ) : (
+                    <div className="text-sm text-gray-500">No items</div>
+                  )}
                 </div>
               </div>
             </div>
@@ -1211,34 +945,160 @@ export default function AdminDashboard() {
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {/* Revenue Trend */}
                 <div className="bg-white rounded-2xl p-6 border border-gray-200">
-                  <h3 className="text-lg font-bold text-gray-900 mb-6">Revenue Trend</h3>
-                  <div className="h-64 flex items-end justify-between gap-2">
-                    {revenueData.map((data, index) => (
-                      <div key={index} className="flex-1 flex flex-col items-center">
-                        <div 
-                          className="w-full bg-black rounded-t-lg transition-all hover:bg-gray-700"
-                          style={{ height: `${(data.value / maxRevenue) * 100}%` }}
-                        ></div>
-                        <span className="text-xs text-gray-500 mt-2">{data.month}</span>
-                      </div>
-                    ))}
+                  <div className="flex justify-between items-center mb-6">
+                    <h3 className="text-lg font-bold text-gray-900">Revenue Trend</h3>
+                    <div className="text-sm text-gray-500">Last 6 Months</div>
                   </div>
+                  {analyticsLoading ? (
+                    <div className="h-64 flex items-center justify-center">
+                      <div className="animate-pulse text-gray-500">Loading revenue data...</div>
+                    </div>
+                  ) : (
+                    <div className="h-64">
+                      <Line
+                        data={{
+                          labels: revenueChartData.labels,
+                          datasets: [
+                            {
+                              label: 'Revenue',
+                              data: revenueChartData.values,
+                              borderColor: 'rgba(79, 70, 229, 1)',
+                              backgroundColor: 'rgba(79, 70, 229, 0.1)',
+                              tension: 0.3,
+                              fill: true,
+                              pointBackgroundColor: 'white',
+                              pointBorderColor: 'rgba(79, 70, 229, 1)',
+                              pointBorderWidth: 2,
+                              pointHoverRadius: 5,
+                              pointHoverBackgroundColor: 'rgba(79, 70, 229, 1)',
+                              pointHoverBorderWidth: 2,
+                              pointHoverBorderColor: 'white',
+                            },
+                          ],
+                        }}
+                        options={{
+                          responsive: true,
+                          maintainAspectRatio: false,
+                          plugins: {
+                            legend: {
+                              display: false,
+                            },
+                            tooltip: {
+                              backgroundColor: 'white',
+                              titleColor: '#111827',
+                              bodyColor: '#4B5563',
+                              borderColor: '#E5E7EB',
+                              borderWidth: 1,
+                              padding: 12,
+                              displayColors: false,
+                              callbacks: {
+                                label: function(context) {
+                                  const value = (context.parsed as { y: number }).y;
+                                  return `₱${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+                                }
+                              }
+                            }
+                          },
+                          scales: {
+                            x: {
+                              grid: {
+                                display: false,
+                              },
+                              ticks: {
+                                color: '#6B7280',
+                              },
+                            },
+                            y: {
+                              grid: {
+                                color: '#F3F4F6',
+                              },
+                              ticks: {
+                                color: '#6B7280',
+                                callback: function(value) {
+                                return `₱${Number(value).toLocaleString()}`;
+                              }
+                              },
+                            },
+                          },
+                        }}
+                      />
+                    </div>
+                  )}
                 </div>
 
                 {/* Orders Overview */}
                 <div className="bg-white rounded-2xl p-6 border border-gray-200">
-                  <h3 className="text-lg font-bold text-gray-900 mb-6">Orders Overview</h3>
-                  <div className="h-64 flex items-end justify-between gap-2">
-                    {ordersData.map((data, index) => (
-                      <div key={index} className="flex-1 flex flex-col items-center">
-                        <div 
-                          className="w-full bg-gray-900 rounded-t-lg transition-all hover:bg-gray-700"
-                          style={{ height: `${(data.value / maxOrders) * 100}%` }}
-                        ></div>
-                        <span className="text-xs text-gray-500 mt-2">{data.month}</span>
-                      </div>
-                    ))}
+                  <div className="flex justify-between items-center mb-6">
+                    <h3 className="text-lg font-bold text-gray-900">Orders Overview</h3>
+                    <div className="text-sm text-gray-500">Last 6 Months</div>
                   </div>
+                  {analyticsLoading ? (
+                    <div className="h-64 flex items-center justify-center">
+                      <div className="animate-pulse text-gray-500">Loading orders data...</div>
+                    </div>
+                  ) : (
+                    <div className="h-64">
+                      <Bar
+                        data={{
+                          labels: ordersChartData.labels,
+                          datasets: [
+                            {
+                              label: 'Orders',
+                              data: ordersChartData.values,
+                              backgroundColor: 'rgba(55, 65, 81, 0.7)',
+                              hoverBackgroundColor: 'rgba(55, 65, 81, 1)',
+                              borderRadius: 4,
+                              borderSkipped: false,
+                            },
+                          ],
+                        }}
+                        options={{
+                          responsive: true,
+                          maintainAspectRatio: false,
+                          plugins: {
+                            legend: {
+                              display: false,
+                            },
+                            tooltip: {
+                              backgroundColor: 'white',
+                              titleColor: '#111827',
+                              bodyColor: '#4B5563',
+                              borderColor: '#E5E7EB',
+                              borderWidth: 1,
+                              padding: 12,
+                              displayColors: false,
+                              callbacks: {
+                                label: function(context) {
+                                  const value = (context.parsed as { y: number }).y;
+                                  return `${value} orders`;
+                                }
+                              }
+                            }
+                          },
+                          scales: {
+                            x: {
+                              grid: {
+                                display: false,
+                              },
+                              ticks: {
+                                color: '#6B7280',
+                              },
+                            },
+                            y: {
+                              grid: {
+                                color: '#F3F4F6',
+                              },
+                              ticks: {
+                                color: '#6B7280',
+                                precision: 0,
+                              },
+                              beginAtZero: true,
+                            },
+                          },
+                        }}
+                      />
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -1331,7 +1191,7 @@ export default function AdminDashboard() {
               <div className="p-6 flex items-center justify-between gap-4">
                 {/* Search */}
                 <div className="flex-1 relative">
-                  <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+                  <SearchIcon className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
                   <input
                     type="text"
                     placeholder="Search products..."
@@ -1492,7 +1352,7 @@ export default function AdminDashboard() {
                 <div className="flex items-center gap-4 mb-4">
                   {/* Search */}
                   <div className="flex-1 relative">
-                    <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+                    <SearchIcon className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
                     <input
                       type="text"
                       placeholder="Search by order ID or customer"
@@ -1575,9 +1435,9 @@ export default function AdminDashboard() {
                         <h3 className="text-lg font-bold text-gray-900">{order.id}</h3>
                         <span
                           className={`flex items-center gap-1 text-xs px-3 py-1 rounded-full font-medium ${
-                            order.status === 'Pending' || order.status === 'Placed'
+                            order.status === 'Pending' || order.status === 'Placed' || order.status === 'Processing'
                               ? 'bg-yellow-100 text-yellow-800'
-                              : order.status === 'Ready for Pickup' || order.status === 'Processing'
+                              : order.status === 'Ready for Pickup'
                               ? 'bg-blue-100 text-blue-800'
                               : 'bg-green-100 text-green-800'
                           }`}
@@ -1638,8 +1498,10 @@ export default function AdminDashboard() {
                       </div>
                       <div>
                         <div className="text-xs text-gray-500 mb-1">Items</div>
-                        <div className="text-sm text-gray-900">
-                          {order.items}
+                        <div className="text-sm text-gray-600">
+                          {Array.isArray(order.items) 
+                            ? `${order.items.length} items`
+                            : order.items}
                         </div>
                       </div>
                       <div>
