@@ -36,7 +36,6 @@ export default function Navbar({
       const uniqueItemsCount = snapshot.size;
       setCartItemsCount(uniqueItemsCount);
     }, (error) => {
-      console.error('Error fetching cart count:', error);
       setCartItemsCount(0);
     });
 
@@ -53,8 +52,7 @@ export default function Navbar({
       setIsMenuOpen(false);
       router.push('/');
     } catch (err) {
-      console.error('Error signing out:', err);
-    }
+      }
   };
 
   const getDisplayName = (emailOrCustomer?: string | null) => {

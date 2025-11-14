@@ -48,14 +48,11 @@ export default function RegisterPage() {
       agreeToTerms,
     });
 
-    console.log('✅ Registration successful:', user);
-
     // [ADDED] Redirect to profile page after registration
     router.push('/profile');
 
   } catch (error: any) {
     // [ADDED] Error Handling
-    console.error('❌ Registration error:', error);
     alert(`Registration failed: ${error.message}`);
   }
 };
@@ -88,12 +85,9 @@ export default function RegisterPage() {
       { merge: true }
     );
 
-    console.log('✅ Google signup successful:', user);
-
     // [ADDED] Redirect to profile page after successful signup
     router.push('/profile');
   } catch (error: any) {
-    console.error('❌ Google signup error:', error);
     setError('Google signup failed. Please try again.');
   } finally {
     // [ADDED] Stop loading state

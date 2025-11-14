@@ -46,8 +46,7 @@ export default function PaymentPage() {
         setCheckoutSubtotal(Number(parsedTotal));
       }
     } catch (err) {
-      console.error('Error reading checkout payload from localStorage:', err);
-    } finally {
+      } finally {
       setLoading(false);
     }
   }, []);
@@ -71,7 +70,6 @@ export default function PaymentPage() {
       // Redirect to review page
       window.location.href = '/checkout/review';
     } catch (err) {
-      console.error('Error saving payment data:', err);
       alert('There was an error saving your payment information. Please try again.');
     }
   };

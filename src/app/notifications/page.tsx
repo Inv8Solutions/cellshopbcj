@@ -180,8 +180,7 @@ export default function NotificationsPage() {
                 }
               }
             } catch (error) {
-              console.error('Error fetching user data:', error);
-            }
+              }
             
             if (!notification.isRead) unread++;
             return notificationData;
@@ -196,7 +195,6 @@ export default function NotificationsPage() {
           setUnreadCount(unread);
           setLoading(false);
         }, (error) => {
-          console.error('Error in notifications snapshot:', error);
           if (isMounted) {
             setLoading(false);
           }
@@ -205,7 +203,6 @@ export default function NotificationsPage() {
         return () => unsubscribe();
         
       } catch (error) {
-        console.error('Error setting up notifications listener:', error);
         if (isMounted) {
           setLoading(false);
         }
@@ -252,8 +249,7 @@ export default function NotificationsPage() {
       // Update unread count
       setUnreadCount(prev => Math.max(0, prev - 1));
     } catch (error) {
-      console.error('Error marking notification as read:', error);
-    }
+      }
   };
 
   const handleMarkAllAsRead = async () => {
@@ -278,8 +274,7 @@ export default function NotificationsPage() {
       
       setUnreadCount(0);
     } catch (error) {
-      console.error('Error marking all notifications as read:', error);
-    }
+      }
   };
 
   const handleDeleteNotification = async (id: string) => {
@@ -299,8 +294,7 @@ export default function NotificationsPage() {
         return updated;
       });
     } catch (error) {
-      console.error('Error deleting notification:', error);
-    }
+      }
   };
 
   const handleClearAll = async () => {
@@ -317,8 +311,7 @@ export default function NotificationsPage() {
       setNotifications([]);
       setUnreadCount(0);
     } catch (error) {
-      console.error('Error clearing all notifications:', error);
-    }
+      }
   };
 
   if (loading) {

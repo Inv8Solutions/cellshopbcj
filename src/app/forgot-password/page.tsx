@@ -27,7 +27,6 @@ export default function ForgotPasswordPage() {
       alert('✅ Password reset email sent!');
       setEmail('');
     } catch (error: any) {
-      console.error('Error sending password reset email:', error);
       alert(`❌ Error: ${error.message}`);
     } finally {
       setLoading(false);

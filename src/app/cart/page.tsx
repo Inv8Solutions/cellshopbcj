@@ -62,13 +62,11 @@ export default function CartPage() {
         return bTs - aTs;
       });
 
-  console.debug('Cart snapshot size:', snapshot.size, 'items:', items.length);
   setCartItems(items);
   // initialize selection to all items currently in cart
   setSelectedIds(new Set(items.map((it) => it.id)));
       setLoading(false);
     }, (error) => {
-      console.error('Error fetching cart:', error);
       setLoading(false);
     });
 
@@ -83,7 +81,6 @@ export default function CartPage() {
       const itemSnap = await getDoc(itemRef);
       
       if (!itemSnap.exists()) {
-        console.error('Cart item not found');
         return;
       }
 
@@ -95,7 +92,6 @@ export default function CartPage() {
         updatedAt: new Date()
       });
     } catch (error) {
-      console.error('Error updating quantity:', error);
       alert('Failed to update quantity. Please try again.');
     }
   };
@@ -106,14 +102,12 @@ export default function CartPage() {
     try {
       await deleteDoc(doc(db, 'users', currentUser.uid, 'cart', id));
     } catch (error) {
-      console.error('Error removing item:', error);
       alert('Failed to remove item. Please try again.');
     }
   };
 
   const applyPromoCode = () => {
     // Promo code logic to be implemented
-    console.log('Applying promo code:', promoCode);
     alert('Promo code feature coming soon!');
   };
 
@@ -336,7 +330,6 @@ export default function CartPage() {
                         localStorage.setItem('checkout_total', JSON.stringify(selectedTotal));
                         router.push('/checkout');
                       } catch (err) {
-                        console.error('Error preparing checkout:', err);
                         alert('Failed to start checkout. Please try again.');
                       }
                     }}

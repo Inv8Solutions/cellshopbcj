@@ -15,7 +15,7 @@ import {
   User,
   AuthError
 } from 'firebase/auth';
-import { auth, db } from '../../firebase/config';
+import app,{ auth, db } from '../../firebase/config';
 import { doc, setDoc } from 'firebase/firestore';
 
 export default function LoginPage() {
@@ -36,10 +36,9 @@ export default function LoginPage() {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
       
-      console.log('Login successful:', user);
       router.push('/profile');
     } catch (error: any) {
-      console.error('Login error:', error);
+      // Error handled by UI
       
       // User-friendly error messages
       switch (error.code) {
@@ -119,10 +118,9 @@ const handleGoogleLogin = async (): Promise<void> => {
       { merge: true }
     );
 
-    console.log('Google login successful:', user);
     router.push('/profile');
   } catch (error: unknown) {
-    console.error('Google login error:', error);
+    // Error handled by UI
     
     // Handle specific error cases
     if (error && typeof error === 'object' && 'code' in error) {
@@ -131,9 +129,9 @@ const handleGoogleLogin = async (): Promise<void> => {
       if (authError.code === 'auth/account-exists-with-different-credential') {
         setError('An account already exists with the same email but different sign-in credentials.');
       } else if (authError.code === 'auth/popup-closed-by-user') {
-        console.log('User closed the popup');
+        // User closed the popup
       } else if (authError.code === 'auth/cancelled-popup-request') {
-        console.log('Popup request was cancelled');
+        // Popup request was cancelled
       } else if (authError.code === 'auth/popup-blocked') {
         setError('Popup was blocked. Please try the email/password login or enable popups for this site.');
       } else {

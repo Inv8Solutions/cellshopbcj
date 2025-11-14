@@ -101,7 +101,6 @@ export default function ProductsPage(): JSX.Element {
           where('status', '==', 'active')
         );
         
-        console.log('Fetching all active products...');
         const querySnapshot = await getDocs(q);
         
         const productsData = querySnapshot.docs.map(doc => {
@@ -118,11 +117,9 @@ export default function ProductsPage(): JSX.Element {
           };
         });
         
-        console.log(`Fetched ${productsData.length} products`);
         setAllProducts(productsData);
       } catch (error) {
-        console.error('Error fetching products:', error);
-      } finally {
+        } finally {
         setLoading(false);
       }
     };
@@ -217,7 +214,6 @@ export default function ProductsPage(): JSX.Element {
       alert('Product added to cart!');
       
     } catch (error) {
-      console.error('Error adding to cart:', error);
       alert('Failed to add product to cart. Please try again.');
     }
   };

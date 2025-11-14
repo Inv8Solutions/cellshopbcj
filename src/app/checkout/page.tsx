@@ -53,8 +53,7 @@ export default function CheckoutPage() {
         setFormData(parsedShippingInfo);
       }
     } catch (err) {
-      console.error('Error loading checkout data from localStorage:', err);
-    } finally {
+      } finally {
       setLoading(false);
     }
   }, []);
@@ -84,7 +83,6 @@ export default function CheckoutPage() {
       // Navigate to payment page
       window.location.href = '/checkout/payment';
     } catch (err) {
-      console.error('Error saving shipping information:', err);
       alert('There was an error saving your shipping information. Please try again.');
     }
   };

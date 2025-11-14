@@ -71,7 +71,6 @@ export default function ReviewPage() {
 
       setLoading(false);
     } catch (err) {
-      console.error('Error loading checkout data:', err);
       router.push('/cart');
     }
   }, [router]);
@@ -143,13 +142,11 @@ export default function ReviewPage() {
               try {
                 await deleteDoc(doc(userCartRef, cartDoc.id));
               } catch (err) {
-                console.warn('Failed to delete cart doc', cartDoc.id, err);
-              }
+                }
             }
           }
         } catch (err) {
-          console.warn('Error removing checked out items from cart:', err);
-        }
+          }
 
         // Save a preview + id so the success page can show the order immediately
         try {
@@ -166,8 +163,7 @@ export default function ReviewPage() {
           localStorage.setItem('last_order_id', orderId);
           localStorage.setItem('last_order_preview', JSON.stringify(preview));
         } catch (e) {
-          console.warn('Could not save order preview to localStorage', e);
-        }
+          }
 
         // Clear transient checkout keys
         localStorage.removeItem('checkout_items');
@@ -178,7 +174,6 @@ export default function ReviewPage() {
         // Redirect to success page with orderId so the page can fetch the exact document
         window.location.href = `/checkout/success?orderId=${orderId}`;
       } catch (error) {
-        console.error('Error submitting order:', error);
         alert('There was an error submitting your order. Please try again.');
         setLoading(false);
       }

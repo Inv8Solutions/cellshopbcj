@@ -76,8 +76,7 @@ export default function ProfilePage() {
       if (userSnap.exists()) {
         setUser({ uid: firebaseUser.uid, ...(userSnap.data() as any) });
       } else {
-        console.warn('User document not found');
-      }
+        }
 
       setLoading(false);
     });
@@ -134,8 +133,7 @@ export default function ProfilePage() {
           setSavedItems(savedData);
         }
       } catch (error) {
-        console.error('Error fetching subcollection:', error);
-      } finally {
+        } finally {
         setLoading(false);
       }
     };
@@ -214,7 +212,6 @@ export default function ProfilePage() {
       setCurrentPassword('');
       setNewPassword('');
     } catch (error: any) {
-      console.error(error);
       setPasswordMessage(error.message || 'Failed to update password.');
     }
   };

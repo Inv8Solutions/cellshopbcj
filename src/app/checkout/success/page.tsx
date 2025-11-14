@@ -43,8 +43,7 @@ export default function OrderSuccessPage() {
           return;
         }
       } catch (err) {
-        console.error('Error parsing checkout preview from localStorage:', err);
-      }
+        }
 
       // legacy fallback key
       const preview = localStorage.getItem('last_order_preview');
@@ -60,8 +59,7 @@ export default function OrderSuccessPage() {
           return true;
         }
       } catch (err) {
-        console.error('Error fetching order by id:', err);
-      }
+        }
       return false;
     };
 
@@ -99,7 +97,6 @@ export default function OrderSuccessPage() {
           loadPreviewFallback();
         }
       } catch (err) {
-        console.error('Error fetching latest order:', err);
         loadPreviewFallback();
       } finally {
         setLoading(false);

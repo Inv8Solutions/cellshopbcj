@@ -60,8 +60,7 @@ export default function ProductsPreviewSection() {
         
         setProducts(productsData);
       } catch (error) {
-        console.error('Error fetching products:', error);
-      } finally {
+        } finally {
         setLoading(false);
       }
     };

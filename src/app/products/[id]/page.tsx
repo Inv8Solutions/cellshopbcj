@@ -105,10 +105,8 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
           }
         } else {
           setError('Product not found');
-          console.log('No such document!');
-        }
+          }
       } catch (error) {
-        console.error('Error fetching product:', error);
         setError('Failed to load product. Please try again.');
       } finally {
         setLoading(false);
@@ -146,7 +144,6 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
       // Show success message (you might want to replace this with a toast notification)
       alert('Added to cart!');
     } catch (error) {
-      console.error('Error adding to cart:', error);
       setError('Failed to add to cart. Please try again.');
     } finally {
       setLoading(false);
@@ -177,7 +174,6 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
       // Redirect to checkout
       router.push('/checkout');
     } catch (error) {
-      console.error('Error during buy now process:', error);
       setError('Failed to process your order. Please try again.');
     } finally {
       setLoading(false);

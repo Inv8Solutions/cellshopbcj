@@ -156,7 +156,6 @@ ChartJS.register(
   Filler
 );
 
-
 // Separate Modal Component
 const AddProductModal = ({ isOpen, onClose, onSave }: {
   isOpen: boolean;
@@ -476,8 +475,7 @@ export default function AdminDashboard() {
         
         setOrders(ordersData);
       } catch (error) {
-        console.error('Error fetching orders:', error);
-      } finally {
+        } finally {
         setLoadingOrders(false);
       }
     };
@@ -530,8 +528,7 @@ export default function AdminDashboard() {
         setCurrentPage(page);
       }
     } catch (error) {
-      console.error('Error fetching products:', error);
-    } finally {
+      } finally {
       setProductsLoading(false);
     }
   }, [activeTab, currentPage, lastVisible, firstVisible, productsLoading, productsPerPage]);
@@ -551,8 +548,6 @@ export default function AdminDashboard() {
   const handleTabClick = (tab: 'dashboard' | 'products' | 'orders' | 'settings') => {
     setActiveTab(tab);
   };
-
-  
 
   const handleMarkAsShipped = useCallback(async (orderId: string) => {
     try {
@@ -577,8 +572,7 @@ export default function AdminDashboard() {
         )
       );
     } catch (error) {
-      console.error('Error marking order as shipped:', error);
-    } finally {
+      } finally {
       setIsMarkingAsShipped(prev => ({ ...prev, [orderId]: false }));
     }
   }, []);
@@ -606,8 +600,7 @@ export default function AdminDashboard() {
         )
       );
     } catch (error) {
-      console.error('Error marking order as arrived:', error);
-    } finally {
+      } finally {
       setIsMarkingAsArrived(prev => ({ ...prev, [orderId]: false }));
     }
   }, []);
@@ -700,8 +693,7 @@ export default function AdminDashboard() {
           amounts: orderValues.map(val => `${val} orders`)
         });
       } catch (error) {
-        console.error('Error fetching revenue data:', error);
-      } finally {
+        } finally {
         setAnalyticsLoading(false);
       }
     };
@@ -760,8 +752,7 @@ export default function AdminDashboard() {
             ordersByMonth[m] = (ordersByMonth[m] || 0) + 1;
           });
         } catch (err) {
-          console.warn('Could not aggregate orders for analytics:', err);
-        }
+          }
 
         // Build arrays in month order
         const revenueArr = labels.map((lab, i) => ({ month: lab, value: Math.round(revenueByMonth[i] || 0) }));
@@ -791,13 +782,11 @@ export default function AdminDashboard() {
             if (mounted) setCategoryDataState(catArr);
           }
         } catch (err) {
-          console.warn('Could not fetch items for category analytics:', err);
-        }
+          }
 
         // Data is now handled by the separate chart data states
       } catch (err) {
-        console.error('Error fetching analytics:', err);
-      } finally {
+        } finally {
         if (mounted) setAnalyticsLoading(false);
       }
     };
@@ -816,7 +805,6 @@ export default function AdminDashboard() {
   };
 
   const handleSubmitProduct = async (productData: any) => {
-    console.log('Adding new product:', productData);
     try {
       // Get the file input element
       const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
@@ -853,11 +841,9 @@ export default function AdminDashboard() {
       alert('Product added successfully!');
       window.location.reload(); // Reload the page to show the new product
     } catch (error) {
-      console.error('Error adding new product:', error);
       alert('Failed to add product. Please try again.');
     }
   };
-
 
   return (
     <div className="min-h-screen flex bg-gray-50">
