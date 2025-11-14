@@ -3,25 +3,20 @@
 import Link from 'next/link';
 import { useState, useEffect } from 'react';
 import { Search, Menu, X, ShoppingBag, Bell, User, LogOut } from 'lucide-react';
-import { getAuth, signOut } from 'firebase/auth';
 import { useRouter } from 'next/navigation';
 import { collection, onSnapshot, query } from 'firebase/firestore';
-import { db } from '@/firebase/config';
+import { signOut } from 'firebase/auth';
+import { db, auth } from '@/firebase/config';
+import { useAuth } from '@/providers/AuthProvider';
 
-interface NavbarProps {
-  currentUser?: { uid: string; email: string } | null;
-  notificationCount?: number;
-}
-
-export default function Navbar({ 
-  currentUser,
-  notificationCount = 0 
-}: NavbarProps) {
+export default function Navbar() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [cartItemsCount, setCartItemsCount] = useState(0);
   const router = useRouter();
+
+  const { currentUser } = useAuth();
 
   // Subscribe to cart updates
   useEffect(() => {
@@ -47,22 +42,27 @@ export default function Navbar({
 
   const handleLogout = async () => {
     try {
-      const auth = getAuth();
       await signOut(auth);
       setIsMenuOpen(false);
       router.push('/');
     } catch (err) {
-      }
+      console.error('Error signing out:', err);
+    }
   };
+  
+  const notificationCount = 0; // Placeholder for notification count
 
-  const getDisplayName = (emailOrCustomer?: string | null) => {
-    if (!emailOrCustomer) return 'Customer';
-    if (emailOrCustomer === 'Customer') return 'Customer';
+  const getDisplayName = (email?: string | null) => {
+    if (!email) return 'Customer';
+    if (email === 'Customer') return 'Customer';
+    
     // take local part of email and Title Case it
-    const local = emailOrCustomer.split('@')[0];
+    const local = email.split('@')[0];
     const parts = local.replace(/[._]/g, ' ').split(' ');
     return parts.map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(' ');
   };
+  
+  const displayName = currentUser ? getDisplayName(currentUser.email) : 'Customer';
 
   return (
     <nav className="fixed top-0 left-0 right-0 z-50 bg-white border-b border-gray-100">
@@ -247,28 +247,12 @@ export default function Navbar({
                       </span>
                     )}
                   </Link>
+                  <div className="text-xs text-gray-500">Customer</div>
                 </div>
-                <Link
-                  href="/profile"
-                  className="block px-4 py-2.5 rounded-lg text-sm font-medium bg-white text-gray-900 hover:bg-gray-50 transition-colors"
-                  onClick={toggleMenu}
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="h-10 w-10 rounded-full bg-black flex items-center justify-center text-white">
-                      <User className="h-5 w-5" />
-                    </div>
-                    <div className="text-left">
-                      <div className="text-sm font-medium">{getDisplayName(currentUser?.email)}</div>
-                      <div className="text-xs text-gray-500">Customer</div>
-                    </div>
-                  </div>
-                </Link>
                 <button
-                  onClick={() => {
-                    toggleMenu();
-                    handleLogout();
-                  }}
-                  className="block px-4 py-2.5 rounded-lg text-sm font-medium bg-black text-white hover:bg-gray-800 transition-colors text-center"
+                  onClick={handleLogout}
+                  aria-label="Logout"
+                  className="p-2 rounded-md hover:bg-gray-50"
                 >
                   Logout
                 </button>
