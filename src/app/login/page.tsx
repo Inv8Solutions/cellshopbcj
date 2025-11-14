@@ -4,8 +4,18 @@ import Link from 'next/link';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft } from 'lucide-react';
-import { getAuth, signInWithEmailAndPassword, GoogleAuthProvider, signInWithPopup, setPersistence, browserLocalPersistence, browserSessionPersistence } from 'firebase/auth';
-import app, { auth, db } from '../../firebase/config';
+import { 
+  getAuth, 
+  signInWithEmailAndPassword, 
+  GoogleAuthProvider, 
+  signInWithPopup, 
+  setPersistence, 
+  browserLocalPersistence, 
+  browserSessionPersistence,
+  User,
+  AuthError
+} from 'firebase/auth';
+import { auth, db } from '../../firebase/config';
 import { doc, setDoc } from 'firebase/firestore';
 
 export default function LoginPage() {
@@ -62,15 +72,35 @@ export default function LoginPage() {
     }
   };
 
-const handleGoogleLogin = async () => {
+const handleGoogleLogin = async (): Promise<void> => {
   setLoading(true);
   setError('');
-
-  const provider = new GoogleAuthProvider();
+  let popupWindow: Window | null = null;
 
   try {
+    // Create the Google provider instance
+    const provider = new GoogleAuthProvider();
+    
+    // Add additional scopes
+    provider.addScope('profile');
+    provider.addScope('email');
+    
+    // Force account selection and prevent automatic sign-in
+    provider.setCustomParameters({
+      prompt: 'select_account',
+      hd: '*',
+    });
+
     // Set persistence based on rememberMe
     await setPersistence(auth, rememberMe ? browserLocalPersistence : browserSessionPersistence);
+
+    // Open a new window for the sign-in flow
+    popupWindow = window.open('', 'GoogleAuthPopup', 'width=600,height=700,scrollbars=yes,resizable=yes');
+    
+    if (!popupWindow || popupWindow.closed || typeof popupWindow.closed === 'undefined') {
+      setError('Popup was blocked. Please allow popups for this site or try the redirect method.');
+      return;
+    }
 
     // Attempt Google Sign-In via Popup
     const result = await signInWithPopup(auth, provider);
@@ -84,31 +114,42 @@ const handleGoogleLogin = async () => {
         email: user.email,
         name: user.displayName,
         photoURL: user.photoURL,
+        lastLogin: new Date().toISOString(),
       },
       { merge: true }
     );
 
     console.log('Google login successful:', user);
     router.push('/profile');
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Google login error:', error);
-
-    // ✅ Handle popup closed by user
-    if (error.code === 'auth/popup-closed-by-user') {
-      console.warn('Google login popup was closed by the user.');
-
-      // Option 1: Soft refresh using Next.js router
-      router.refresh();
-
-      // Option 2 (alternative): Hard reload page
-      // window.location.reload();
-
-      return;
+    
+    // Handle specific error cases
+    if (error && typeof error === 'object' && 'code' in error) {
+      const authError = error as { code: string; message?: string };
+      
+      if (authError.code === 'auth/account-exists-with-different-credential') {
+        setError('An account already exists with the same email but different sign-in credentials.');
+      } else if (authError.code === 'auth/popup-closed-by-user') {
+        console.log('User closed the popup');
+      } else if (authError.code === 'auth/cancelled-popup-request') {
+        console.log('Popup request was cancelled');
+      } else if (authError.code === 'auth/popup-blocked') {
+        setError('Popup was blocked. Please try the email/password login or enable popups for this site.');
+      } else {
+        setError(authError.message || 'Failed to sign in with Google. Please try again.');
+      }
+    } else {
+      setError('An unexpected error occurred. Please try again.');
     }
-
-    // Handle any other Google login error
-    setError('Google login failed. Please try again.');
+    
+    // Refresh the page to ensure clean state
+    router.refresh();
   } finally {
+    // Close the popup if it's still open
+    if (popupWindow && !popupWindow.closed) {
+      popupWindow.close();
+    }
     setLoading(false);
   }
 };
