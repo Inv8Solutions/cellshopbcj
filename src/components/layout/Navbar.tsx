@@ -117,7 +117,7 @@ export default function Navbar() {
                 {/* Shopping Bag */}
                 <Link 
                   href="/cart" 
-                  className="relative p-2 rounded-full hover:bg-gray-50 group"
+                  className="relative p-2 rounded-full hover:bg-gray-50"
                   aria-label={`Shopping bag with ${cartItemsCount} ${cartItemsCount === 1 ? 'item' : 'items'}`}
                 >
                   <ShoppingBag className="h-5 w-5 text-gray-700" />
@@ -126,9 +126,6 @@ export default function Navbar() {
                       {cartItemsCount}
                     </span>
                   )}
-                  <span className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-2 py-1 text-xs font-medium text-white bg-gray-900 rounded-md opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
-                    {cartItemsCount} {cartItemsCount === 1 ? 'item' : 'items'} in bag
-                  </span>
                 </Link>
 
                 {/* Notifications */}
