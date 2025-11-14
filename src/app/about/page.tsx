@@ -132,7 +132,7 @@ export default function AboutPage() {
           </p>
           <Link 
             href="/login" 
-            className="inline-block bg-white text-blue-600 px-8 py-3 rounded-full font-medium hover:bg-blue-50 transition-colors"
+            className="inline-block bg-white text-gray-900 px-8 py-3 rounded-full font-medium hover:bg-blue-50 transition-colors"
           >
             Shop Now
           </Link>
