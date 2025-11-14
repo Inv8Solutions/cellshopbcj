@@ -14,6 +14,7 @@ interface QuickAction {
   icon: any;
   href: string;
   featured: boolean;
+  onClick?: (e: React.MouseEvent) => void;
 }
 
 interface Order {
@@ -54,10 +55,40 @@ export default function ProfilePage() {
     { id: 'settings', label: 'Settings', icon: Settings },
   ];
 
-  const quickActions: QuickAction[] = [
-    { title: 'Browse Products', description: 'Explore our collection', icon: ShoppingBag, href: '/products', featured: true },
-    { title: 'Track Orders', description: 'Check delivery status', icon: Package, href: '#', featured: false },
-    { title: 'Saved Items', description: 'View saved items', icon: Heart, href: '#', featured: false }
+  const quickActions = [
+    { 
+      title: 'Browse Products', 
+      description: 'Explore our collection', 
+      icon: ShoppingBag, 
+      href: '/products', 
+      featured: true,
+      onClick: (e: React.MouseEvent) => {
+        e.preventDefault();
+        window.location.href = '/products';
+      }
+    },
+    { 
+      title: 'Track Orders', 
+      description: 'Check delivery status', 
+      icon: Package, 
+      href: '#', 
+      featured: false,
+      onClick: (e: React.MouseEvent) => {
+        e.preventDefault();
+        setActiveTab('orders');
+      }
+    },
+    { 
+      title: 'Saved Items', 
+      description: 'View saved items', 
+      icon: Heart, 
+      href: '#', 
+      featured: false,
+      onClick: (e: React.MouseEvent) => {
+        e.preventDefault();
+        setActiveTab('saved');
+      }
+    }
   ];
 
   // ------------------------------
@@ -322,11 +353,15 @@ export default function ProfilePage() {
                   {quickActions.map((action) => {
                     const Icon = action.icon;
                     return (
-                      <Link key={action.title} href={action.href} className={`rounded-3xl p-6 transition-all hover:scale-[1.02] ${action.featured ? 'bg-black text-white md:col-span-2 md:row-span-2' : 'bg-gray-100 text-gray-900'}`}>
+                      <div 
+                        key={action.title} 
+                        onClick={action.onClick}
+                        className={`rounded-3xl p-6 transition-all hover:scale-[1.02] cursor-pointer ${action.featured ? 'bg-black text-white md:col-span-2 md:row-span-2' : 'bg-gray-100 text-gray-900 hover:bg-gray-200'}`}
+                      >
                         <Icon className={`w-8 h-8 mb-4 ${action.featured ? 'text-white' : 'text-gray-900'}`} />
                         <h3 className="text-xl font-bold mb-2">{action.title}</h3>
                         <p className={`text-sm ${action.featured ? 'text-gray-300' : 'text-gray-600'}`}>{action.description}</p>
-                      </Link>
+                      </div>
                     );
                   })}
                 </div>
