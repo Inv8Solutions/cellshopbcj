@@ -30,7 +30,7 @@ export default function ContactSection() {
     { label: 'Home', href: '/' },
     { label: 'About', href: '/about' },
     { label: 'Products', href: '/products' },
-    { label: 'Contact', href: '/contact' }
+    { label: 'Contact', href: '#' }
   ];
 
   return (
