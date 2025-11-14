@@ -1,27 +1,32 @@
 'use client';
 
-import { JSX } from 'react';
-import Navbar from '@/components/layout/Navbar';
-import Footer from '@/components/layout/Footer';
-import ContactSection from '@/components/home/ContactSection';
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { ShoppingBag, ChevronDown } from 'lucide-react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { ShoppingBag, ChevronDown } from 'lucide-react';
 import { 
   collection, 
   getDocs, 
   query, 
   where, 
   orderBy, 
-  QueryConstraint,
-  addDoc,
-  updateDoc,
   doc,
+  setDoc,
   serverTimestamp
 } from 'firebase/firestore';
-import { getAuth, onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
+import { useAuth } from '@/providers/AuthProvider';
+import Navbar from '@/components/layout/Navbar';
+import Footer from '@/components/layout/Footer';
+import ContactSection from '@/components/home/ContactSection';
 import { db } from '@/firebase/config';
-import { useRouter } from 'next/navigation';
+
+// Add this to fix JSX namespace error
+declare global {
+  namespace JSX {
+    interface Element {}
+    interface IntrinsicElements {}
+  }
+}
 
 // ------------------------------
 // Product Type Definition
@@ -37,23 +42,29 @@ interface Product {
   createdAt: any | null; // Firestore timestamp or null
 }
 
-interface NavbarProps {
-  currentUser: { uid: string; email: string; } | null;
+interface CartItem {
+  id: string;
+  productId: string;
+  quantity: number;
+  addedAt: any;
 }
 
-export default function ProductsPage(): JSX.Element {
+interface NavbarProps {
+}
+
+export default function ProductsPage() {
   // ------------------------------
   // Hooks & State
   // ------------------------------
   const router = useRouter();
+  const { currentUser } = useAuth();
   
   const [priceRange, setPriceRange] = useState<[number, number]>([0, 100000]);
-  const [selectedCategory, setSelectedCategory] = useState<string>(''); // single selection
-  const [selectedFacility, setSelectedFacility] = useState<string>(''); // single selection
+  const [selectedCategory, setSelectedCategory] = useState<string>('');
+  const [selectedFacility, setSelectedFacility] = useState<string>('');
   const [sortBy, setSortBy] = useState<'featured' | 'price-low' | 'price-high' | 'newest'>('featured');
   const [loading, setLoading] = useState(true);
-  const [currentUser, setCurrentUser] = useState<{ uid: string; email: string } | null>(null);
-  const [allProducts, setAllProducts] = useState<Product[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
   const [filteredProducts, setFilteredProducts] = useState<Product[]>([]);
 
   const categories = [
@@ -72,148 +83,96 @@ export default function ProductsPage(): JSX.Element {
   ];
 
   // ------------------------------
-  // Keep user session alive
-  // ------------------------------
-  useEffect(() => {
-    // call getAuth inside effect to avoid referencing auth on module init (better for client-only runtime)
-    const auth = getAuth();
-    const unsubscribe = onAuthStateChanged(auth, (user: FirebaseUser | null) => {
-      if (user) {
-        setCurrentUser({ uid: user.uid, email: user.email || 'Customer' });
-      } else {
-        setCurrentUser(null);
-      }
-    });
-
-    return () => unsubscribe();
-  }, []);
-
-  // ------------------------------
   // Fetch all products from Firestore on initial load
   // ------------------------------
   useEffect(() => {
-    const fetchAllProducts = async () => {
-      setLoading(true);
+    const fetchProducts = async () => {
       try {
-        // Fetch all active products once
+        setLoading(true);
         const q = query(
           collection(db, 'items'),
           where('status', '==', 'active')
         );
-        
         const querySnapshot = await getDocs(q);
-        
-        const productsData = querySnapshot.docs.map(doc => {
-          const data = doc.data();
-          return {
-            id: doc.id,
-            name: data.name || 'Unnamed Product',
-            price: Number(data.price) || 0,
-            image: data.image || '/placeholder.png',
-            category: data.category || 'Uncategorized',
-            facility: data.facility || 'Unknown Facility',
-            status: data.status || 'active',
-            createdAt: data.createdAt || null,
-          };
-        });
-        
-        setAllProducts(productsData);
+        const productsData = querySnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        } as Product));
+        setProducts(productsData);
+        setFilteredProducts(productsData);
       } catch (error) {
-        } finally {
+        console.error('Error fetching products:', error);
+      } finally {
         setLoading(false);
       }
     };
     
-    fetchAllProducts();
+    fetchProducts();
   }, []);
-  
+
   // ------------------------------
   // Filter and sort products in memory
   // ------------------------------
   useEffect(() => {
-    if (!allProducts.length) return;
-    
-    // Apply filters
-    let result = [...allProducts];
-    
+    let filtered = [...products];
+
     // Filter by category
     if (selectedCategory) {
-      result = result.filter(p => p.category === selectedCategory);
+      filtered = filtered.filter(product => product.category === selectedCategory);
     }
-    
+
     // Filter by facility
     if (selectedFacility) {
-      result = result.filter(p => p.facility === selectedFacility);
+      filtered = filtered.filter(product => product.facility === selectedFacility);
     }
-    
+
     // Filter by price range
-    result = result.filter(p => 
-      p.price >= priceRange[0] && p.price <= priceRange[1]
+    filtered = filtered.filter(
+      product => product.price >= priceRange[0] && product.price <= priceRange[1]
     );
-    
+
     // Apply sorting
-    result.sort((a, b) => {
-      if (sortBy === 'price-low') {
-        return a.price - b.price;
-      } else if (sortBy === 'price-high') {
-        return b.price - a.price;
-      } else if (sortBy === 'newest') {
-        const aDate = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(0);
-        const bDate = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(0);
-        return bDate.getTime() - aDate.getTime();
-      }
-      // Default: featured (sort by createdAt descending)
-      const aDate = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(0);
-      const bDate = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(0);
-      return bDate.getTime() - aDate.getTime();
-    });
-    
-    setFilteredProducts(result);
-  }, [allProducts, selectedCategory, selectedFacility, priceRange, sortBy]);
+    switch (sortBy) {
+      case 'price-low':
+        filtered.sort((a, b) => a.price - b.price);
+        break;
+      case 'price-high':
+        filtered.sort((a, b) => b.price - a.price);
+        break;
+      case 'newest':
+        filtered.sort((a, b) => (b.createdAt?.toDate() || 0) - (a.createdAt?.toDate() || 0));
+        break;
+      default: // featured
+        // Default sorting (e.g., by relevance or as they come)
+        break;
+    }
+
+    setFilteredProducts(filtered);
+  }, [products, selectedCategory, selectedFacility, priceRange, sortBy]);
 
   // ------------------------------
-  // Handlers
+  // Add to Cart Functionality
   // ------------------------------
-  const handleAddToCart = async (product: Product) => {
+  const addToCart = async (product: Product) => {
     if (!currentUser) {
-      // Redirect to login if not authenticated
       router.push('/login');
       return;
     }
 
     try {
-      const userCartRef = collection(db, 'users', currentUser.uid, 'cart');
+      const cartItemRef = doc(db, 'users', currentUser.uid, 'cart', product.id);
+      await setDoc(cartItemRef, {
+        productId: product.id,
+        name: product.name,
+        price: product.price,
+        image: product.image,
+        quantity: 1,
+        addedAt: serverTimestamp()
+      }, { merge: true });
       
-      // Check if product already exists in cart
-      const existingItemQuery = query(userCartRef, where('productId', '==', product.id));
-      const existingItemSnapshot = await getDocs(existingItemQuery);
-
-      if (!existingItemSnapshot.empty) {
-        // Product exists, update quantity
-        const existingItem = existingItemSnapshot.docs[0];
-        const currentQuantity = existingItem.data().quantity || 1;
-        
-        await updateDoc(doc(userCartRef, existingItem.id), {
-          quantity: currentQuantity + 1,
-          updatedAt: serverTimestamp()
-        });
-      } else {
-        // Add new product to cart
-        await addDoc(userCartRef, {
-          productId: product.id,
-          name: product.name,
-          price: product.price,
-          image: product.image,
-          quantity: 1,
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp()
-        });
-      }
-
-      // Show success message (you can replace this with a toast notification)
       alert('Product added to cart!');
-      
     } catch (error) {
+      console.error('Error adding to cart:', error);
       alert('Failed to add product to cart. Please try again.');
     }
   };
@@ -223,8 +182,7 @@ export default function ProductsPage(): JSX.Element {
   // ------------------------------
   return (
     <div className="min-h-screen flex flex-col bg-white">
-      {/* Navbar with currentUser */}
-      <Navbar currentUser={currentUser} />
+      <Navbar />
 
       <main className="grow pt-16">
         <div className="w-full px-6 lg:px-12 py-8">
@@ -358,7 +316,7 @@ export default function ProductsPage(): JSX.Element {
                         <button
                           className="shrink-0 w-9 h-9 rounded-full border-2 border-gray-900 flex items-center justify-center hover:bg-gray-900 hover:text-white transition-all"
                           aria-label={`Add ${product.name} to cart`}
-                          onClick={() => handleAddToCart(product)}
+                          onClick={() => addToCart(product)}
                         >
                           <ShoppingBag className="h-4 w-4" />
                         </button>

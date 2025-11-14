@@ -225,7 +225,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
 
   return (
     <div className="min-h-screen flex flex-col bg-white">
-      <Navbar currentUser={currentUser} />
+      <Navbar />
       <main className="grow pt-16">
         <div className="w-full px-6 lg:px-12 py-8">
           {/* Breadcrumb */}
