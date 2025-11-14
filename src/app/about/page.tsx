@@ -2,11 +2,13 @@
 
 import Image from 'next/image';
 import Link from 'next/link';
+import Navbar from '@/components/layout/Navbar';
 import { Users, Target, Eye, Heart } from 'lucide-react';
 
 export default function AboutPage() {
   return (
     <div className="min-h-screen bg-white">
+      < Navbar />
       {/* Hero Section */}
       <section className="relative bg-gray-50 py-20">
         <div className="container mx-auto px-6 lg:px-12">
