@@ -124,7 +124,7 @@ export default function AboutPage() {
       </section>
 
       {/* Call to Action */}
-      <section className="py-16 bg-blue-600">
+      <section className="py-16 bg-gray-900">
         <div className="container mx-auto px-6 lg:px-12 text-center">
           <h2 className="text-3xl font-bold text-white mb-6">Join Us in Making a Difference</h2>
           <p className="text-blue-100 text-lg mb-8 max-w-2xl mx-auto">
