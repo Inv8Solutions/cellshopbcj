@@ -7,19 +7,19 @@ export default function ServicesSection() {
       icon: Building2,
       title: 'District Jails',
       description: 'Explore products from district-level facilities offering specialized craftsmanship and training programs.',
-      link: '/services/district-jails'
+      link: '#'
     },
     {
       icon: Building,
       title: 'City Jails',
       description: 'Discover unique creations from city jail facilities committed to rehabilitation and skills development.',
-      link: '/services/city-jails'
+      link: '#'
     },
     {
       icon: Home,
       title: 'Municipal Jails',
       description: 'Support local communities through products crafted in municipal jail livelihood programs.',
-      link: '/services/municipal-jails'
+      link: '#'
     }
   ];
 
