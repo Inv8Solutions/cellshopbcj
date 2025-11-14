@@ -1,18 +1,21 @@
 'use client';
 
 import Link from 'next/link';
-import { useState, useEffect } from 'react';
-import { Search, Menu, X, ShoppingBag, Bell, User, LogOut } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { Search, Menu, X, ShoppingBag, Bell, User, LogOut, Loader2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { collection, onSnapshot, query } from 'firebase/firestore';
 import { signOut } from 'firebase/auth';
 import { db, auth } from '@/firebase/config';
 import { useAuth } from '@/providers/AuthProvider';
+import { searchProducts, SearchResult } from '@/lib/search';
 
 export default function Navbar() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [cartItemsCount, setCartItemsCount] = useState(0);
   const router = useRouter();
 
@@ -38,7 +41,70 @@ export default function Navbar() {
   }, [currentUser]);
 
   const toggleMenu = () => setIsMenuOpen(!isMenuOpen);
-  const toggleSearch = () => setIsSearchOpen(!isSearchOpen);
+  const toggleSearch = () => {
+    setIsSearchOpen(!isSearchOpen);
+    if (!isSearchOpen) {
+      setSearchQuery('');
+      setSearchResults([]);
+    }
+  };
+  
+  // Debounced search
+  const debounce = (func: Function, delay: number) => {
+    let timeoutId: NodeJS.Timeout;
+    return (...args: any[]) => {
+      clearTimeout(timeoutId);
+      timeoutId = setTimeout(() => func(...args), delay);
+    };
+  };
+  
+  // Handle search input change with debouncing
+  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setSearchQuery(value);
+    
+    if (value.trim()) {
+      debouncedSearch(value);
+    } else {
+      setSearchResults([]);
+    }
+  };
+  
+  // Perform the actual search
+  const performSearch = useCallback(async (query: string) => {
+    if (!query.trim()) return;
+    
+    setIsSearching(true);
+    try {
+      const results = await searchProducts(query);
+      setSearchResults(results);
+    } catch (error) {
+      console.error('Search error:', error);
+      setSearchResults([]);
+    } finally {
+      setIsSearching(false);
+    }
+  }, []);
+  
+  // Create debounced search function
+  const debouncedSearch = useCallback(
+    debounce((query: string) => performSearch(query), 300),
+    [performSearch]
+  );
+  
+  // Clear search when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (!target.closest('.search-container')) {
+        setSearchResults([]);
+        setSearchQuery('');
+      }
+    };
+    
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const handleLogout = async () => {
     try {
@@ -71,17 +137,49 @@ export default function Navbar() {
           {/* Search Bar - Desktop / Search Icon - Mobile */}
           <div className="flex items-center flex-1 max-w-xs">
             {/* Desktop Search Bar */}
-            <div className="hidden md:block relative w-full">
+            <div className="hidden md:block relative w-full search-container">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                 <Search className="h-4 w-4 text-gray-400" />
               </div>
               <input
                 type="text"
-                placeholder="Search Anything..."
+                placeholder="Search products..."
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="block w-full pl-9 pr-3 py-2 bg-gray-50 border-0 rounded-lg text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-200 focus:bg-white transition-all"
+                onChange={handleSearchChange}
+                className="block w-full pl-9 pr-10 py-2 bg-gray-50 border-0 rounded-lg text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-200 focus:bg-white transition-all"
               />
+              {isSearching && (
+                <div className="absolute inset-y-0 right-0 pr-3 flex items-center">
+                  <Loader2 className="h-4 w-4 animate-spin text-gray-400" />
+                </div>
+              )}
+              {searchResults.length > 0 && (
+                <div className="absolute z-10 mt-1 w-full bg-white shadow-lg rounded-md py-1 border border-gray-200">
+                  {searchResults.map((item) => (
+                    <Link
+                      key={item.id}
+                      href={`/product/${item.id}`}
+                      className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                      onClick={() => {
+                        setSearchQuery('');
+                        setSearchResults([]);
+                      }}
+                    >
+                      {item.imageUrl && (
+                        <img
+                          src={item.imageUrl}
+                          alt={item.name}
+                          className="h-8 w-8 rounded-full object-cover mr-3"
+                        />
+                      )}
+                      <div>
+                        <div className="font-medium text-gray-900">{item.name}</div>
+                        <div className="text-gray-500">₱{item.price.toFixed(2)}</div>
+                      </div>
+                    </Link>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Mobile Search Icon */}
@@ -193,19 +291,52 @@ export default function Navbar() {
 
       {/* Mobile Search Bar (Expandable) */}
       {isSearchOpen && (
-        <div className="md:hidden bg-white border-t border-gray-100 px-6 py-3">
+        <div className="md:hidden bg-white border-t border-gray-100 px-6 py-3 search-container">
           <div className="relative">
             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
               <Search className="h-4 w-4 text-gray-400" />
             </div>
             <input
               type="text"
-              placeholder="Search Anything..."
+              placeholder="Search products..."
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="block w-full pl-9 pr-3 py-2 bg-gray-50 border-0 rounded-lg text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-200 focus:bg-white transition-all"
+              onChange={handleSearchChange}
+              className="block w-full pl-9 pr-10 py-2 bg-gray-50 border-0 rounded-lg text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-200 focus:bg-white transition-all"
               autoFocus
             />
+            {isSearching && (
+              <div className="absolute inset-y-0 right-0 pr-3 flex items-center">
+                <Loader2 className="h-4 w-4 animate-spin text-gray-400" />
+              </div>
+            )}
+            {searchResults.length > 0 && (
+              <div className="absolute z-10 mt-1 w-full bg-white shadow-lg rounded-md py-1">
+                {searchResults.map((item) => (
+                  <Link
+                    key={item.id}
+                    href={`/product/${item.id}`}
+                    className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                    onClick={() => {
+                      setSearchQuery('');
+                      setSearchResults([]);
+                      setIsSearchOpen(false);
+                    }}
+                  >
+                    {item.imageUrl && (
+                      <img
+                        src={item.imageUrl}
+                        alt={item.name}
+                        className="h-8 w-8 rounded-full object-cover mr-3"
+                      />
+                    )}
+                    <div>
+                      <div className="font-medium text-gray-900">{item.name}</div>
+                      <div className="text-gray-500">₱{item.price.toFixed(2)}</div>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}
