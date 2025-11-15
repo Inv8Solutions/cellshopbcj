@@ -1,6 +1,10 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
+import { auth, db as firebaseDb } from '@/firebase/config';
+import { onAuthStateChanged } from 'firebase/auth';
+import { doc as firestoreDoc, getDoc as firestoreGetDoc } from 'firebase/firestore';
 import { 
   ChevronDown, 
   ChevronUp,
@@ -391,6 +395,12 @@ const AddProductModal = ({ isOpen, onClose, onSave }: {
 };
 
 export default function AdminDashboard() {
+  const router = useRouter();
+  
+  // Authentication State
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
+  
   // UI State
   const [activeTab, setActiveTab] = useState<'dashboard' | 'products' | 'orders' | 'settings'>('dashboard');
   const [searchQuery, setSearchQuery] = useState('');
@@ -423,6 +433,70 @@ export default function AdminDashboard() {
     { id: 'orders', label: 'Orders', icon: ShoppingCart, tab: 'orders' },
     { id: 'settings', label: 'Settings', icon: Settings, tab: 'settings' },
   ];
+
+  // Check authentication on mount
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        try {
+          // Check if user is admin
+          const userDoc = await firestoreGetDoc(firestoreDoc(firebaseDb, 'users', user.uid));
+          
+          if (userDoc.exists()) {
+            const userData = userDoc.data();
+            
+            if (userData.role === 'admin') {
+              setIsAuthenticated(true);
+              setIsCheckingAuth(false);
+            } else {
+              // Not an admin
+              router.push('/admin/login');
+            }
+          } else {
+            // User document doesn't exist
+            router.push('/admin/login');
+          }
+        } catch (error) {
+          console.error('Error checking admin status:', error);
+          router.push('/admin/login');
+        }
+      } else {
+        // Not logged in
+        router.push('/admin/login');
+      }
+    });
+
+    return () => unsubscribe();
+  }, [router]);
+
+  // Logout handler
+  const handleLogout = async () => {
+    try {
+      await auth.signOut();
+      localStorage.removeItem('isAdmin');
+      localStorage.removeItem('adminUid');
+      router.push('/admin/login');
+    } catch (error) {
+      console.error('Error logging out:', error);
+    }
+  };
+
+  // Show loading while checking authentication
+  if (isCheckingAuth) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <div className="w-16 h-16 border-4 border-gray-300 border-t-black rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-gray-600">Verifying access...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Don't render admin panel if not authenticated
+  if (!isAuthenticated) {
+    return null;
+  }
 
   // Orders state and fetching logic
 
@@ -884,7 +958,10 @@ export default function AdminDashboard() {
               );
             })}
             
-            <button className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-100 transition-all mt-4">
+            <button 
+              onClick={handleLogout}
+              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-100 transition-all mt-4"
+            >
               <LogOut className="w-5 h-5" />
               Logout
             </button>
@@ -1351,7 +1428,7 @@ export default function AdminDashboard() {
                                     }}
                                   />
                                 ) : (
-                                  <div className="w-full h-full bg-gradient-to-br from-amber-600 to-amber-800"></div>
+                                  <div className="w-full h-full bg-linear-to-br from-amber-600 to-amber-800"></div>
                                 )}
                               </div>
                               <span className="text-sm font-medium text-gray-900">{product.name}</span>
