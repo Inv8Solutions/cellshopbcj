@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { ShoppingBag, ArrowRight } from 'lucide-react';
-import { collection, query, limit, getDocs } from 'firebase/firestore';
+import { collection, query, limit, getDocs, where } from 'firebase/firestore';
 import { db } from '@/firebase/config';
 
 interface Product {
@@ -37,9 +37,10 @@ export default function ProductsPreviewSection() {
       try {
         setLoading(true);
         
-        // Create a query that gets the first 8 items
+        // Create a query that gets the first 8 active items
         const itemsQuery = query(
           collection(db, 'items'),
+          where('status', '==', 'active'),
           limit(8)
         );
         

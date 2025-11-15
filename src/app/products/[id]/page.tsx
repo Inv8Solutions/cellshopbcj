@@ -83,6 +83,15 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
 
         if (docSnap.exists()) {
           const data = docSnap.data();
+          
+          // Check if product is inactive - redirect to products page
+          if (data.status === 'inactive') {
+            setError('This product is no longer available');
+            setTimeout(() => router.push('/products'), 2000);
+            setLoading(false);
+            return;
+          }
+          
           setProduct({
             id: docSnap.id,
             name: data.name || 'Unnamed Product',

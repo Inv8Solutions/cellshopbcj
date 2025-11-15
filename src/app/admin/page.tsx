@@ -394,6 +394,267 @@ const AddProductModal = ({ isOpen, onClose, onSave }: {
   );
 };
 
+// Edit Product Modal Component
+const EditProductModal = ({ isOpen, onClose, onSave, product }: {
+  isOpen: boolean;
+  onClose: () => void;
+  onSave: (product: any) => Promise<void>;
+  product: Product | null;
+}) => {
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [formData, setFormData] = useState({
+    name: '',
+    category: '',
+    facility: '',
+    price: '',
+    stock: 0,
+    description: '',
+    image: '',
+    status: 'active'
+  });
+
+  // Initialize form with product data when product changes
+  useEffect(() => {
+    if (product) {
+      setFormData({
+        name: product.name || '',
+        category: product.category || '',
+        facility: product.facility || '',
+        price: product.price || '',
+        stock: product.stock || 0,
+        description: '',
+        image: product.image || '',
+        status: product.status || 'active'
+      });
+    }
+  }, [product]);
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({
+      ...prev,
+      [name]: name === 'stock' ? parseInt(value) || 0 : value
+    }));
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (isSubmitting) return;
+    
+    try {
+      setIsSubmitting(true);
+      await onSave(formData);
+      onClose();
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  if (!isOpen || !product) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+        <div className="p-6 border-b border-gray-200">
+          <div className="flex items-center justify-between">
+            <h2 className="text-2xl font-bold text-gray-900">Edit Product</h2>
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+            >
+              <X className="w-6 h-6 text-gray-600" />
+            </button>
+          </div>
+        </div>
+
+        <form onSubmit={handleSubmit} className="p-6 space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Product Name */}
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Product Name *
+              </label>
+              <input
+                type="text"
+                name="name"
+                value={formData.name}
+                onChange={handleInputChange}
+                required
+                className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent"
+                placeholder="Enter product name"
+              />
+            </div>
+
+            {/* Category */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Category *
+              </label>
+              <select
+                name="category"
+                value={formData.category}
+                onChange={handleInputChange}
+                required
+                className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent"
+              >
+                <option value="">Select Category</option>
+                <option value="Home & Kitchen">Home & Kitchen</option>
+                <option value="Office Supplies">Office Supplies</option>
+                <option value="Accessories">Accessories</option>
+                <option value="Home Decor">Home Decor</option>
+              </select>
+            </div>
+
+            {/* Facility */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Facility *
+              </label>
+              <select
+                name="facility"
+                value={formData.facility}
+                onChange={handleInputChange}
+                required
+                className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent"
+              >
+                <option value="">Select Facility</option>
+                <option value="Baguio City Jail">Baguio City Jail</option>
+                <option value="Benguet Provincial Jail">Benguet Provincial Jail</option>
+                <option value="La Trinidad Municipal Jail">La Trinidad Municipal Jail</option>
+              </select>
+            </div>
+
+            {/* Price */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Price *
+              </label>
+              <input
+                type="text"
+                name="price"
+                value={formData.price}
+                onChange={handleInputChange}
+                required
+                className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent"
+                placeholder="₱0.00"
+              />
+            </div>
+
+            {/* Stock */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Stock *
+              </label>
+              <input
+                type="number"
+                name="stock"
+                value={formData.stock}
+                onChange={handleInputChange}
+                required
+                min="0"
+                className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent"
+                placeholder="0"
+              />
+            </div>
+
+            {/* Status */}
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Status *
+              </label>
+              <select
+                name="status"
+                value={formData.status}
+                onChange={handleInputChange}
+                required
+                className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent"
+              >
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+                <option value="out of stock">Out of Stock</option>
+              </select>
+            </div>
+
+            {/* Image Upload */}
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Update Image (Optional)
+              </label>
+              <div className="flex items-center gap-4">
+                <input
+                  type="file"
+                  name="image"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      setFormData(prev => ({
+                        ...prev,
+                        image: file.name
+                      }));
+                    }
+                  }}
+                  accept="image/*"
+                  className="flex-1 px-4 py-3 bg-gray-50 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-black file:text-white hover:file:bg-gray-800"
+                />
+                {formData.image && (
+                  <span className="text-sm font-medium text-gray-700 whitespace-nowrap truncate max-w-xs">
+                    {formData.image}
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-gray-500 mt-1">Leave empty to keep current image</p>
+            </div>
+
+            {/* Description */}
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Description
+              </label>
+              <textarea
+                name="description"
+                value={formData.description}
+                onChange={handleInputChange}
+                rows={4}
+                className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent resize-none"
+                placeholder="Enter product description..."
+              />
+            </div>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex items-center justify-end gap-4 pt-6 border-t border-gray-200">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-6 py-3 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className={`px-6 py-3 text-sm font-medium text-white bg-black rounded-xl hover:bg-gray-800 transition-colors flex items-center justify-center gap-2 min-w-[120px] ${isSubmitting ? 'opacity-75' : ''}`}
+            >
+              {isSubmitting ? (
+                <>
+                  <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  Updating...
+                </>
+              ) : (
+                'Update Product'
+              )}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+};
+
 export default function AdminDashboard() {
   const router = useRouter();
   
@@ -408,6 +669,9 @@ export default function AdminDashboard() {
   const [orderFilter, setOrderFilter] = useState<'all' | 'processing' | 'pickup' | 'delivered'>('all');
   const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
   const [showAddProductModal, setShowAddProductModal] = useState(false);
+  const [showEditProductModal, setShowEditProductModal] = useState(false);
+  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const [deletingProductId, setDeletingProductId] = useState<string | null>(null);
   
   // Data States
   const [products, setProducts] = useState<Product[]>([]);
@@ -895,6 +1159,108 @@ export default function AdminDashboard() {
       window.location.reload(); // Reload the page to show the new product
     } catch (error) {
       alert('Failed to add product. Please try again.');
+    }
+  };
+
+  // Handle Edit Product
+  const handleEditProduct = (product: Product) => {
+    console.log('Edit product clicked:', product);
+    setEditingProduct(product);
+    setShowEditProductModal(true);
+  };
+
+  const handleUpdateProduct = async (productData: any) => {
+    if (!editingProduct) return;
+    
+    try {
+      const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+      let imageData = editingProduct.image; // Keep existing image by default
+
+      // If a new file was selected
+      if (fileInput?.files?.length) {
+        const file = fileInput.files[0];
+        imageData = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.readAsDataURL(file);
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = (error) => reject(error);
+        });
+      }
+
+      // Update the product in Firestore
+      await updateDoc(doc(db, 'items', editingProduct.id), {
+        name: productData.name,
+        category: productData.category,
+        facility: productData.facility,
+        price: productData.price,
+        stock: Number(productData.stock) || 0,
+        description: productData.description,
+        image: imageData,
+        imageName: fileInput?.files?.[0]?.name || editingProduct.image,
+        imageType: fileInput?.files?.[0]?.type || '',
+        status: productData.status || 'active',
+        updatedAt: serverTimestamp()
+      });
+
+      alert('Product updated successfully!');
+      setShowEditProductModal(false);
+      setEditingProduct(null);
+      
+      // Refresh products list
+      fetchProducts(currentPage, true);
+    } catch (error) {
+      console.error('Error updating product:', error);
+      alert('Failed to update product. Please try again.');
+    }
+  };
+
+  // Handle Delete Product
+  const handleDeleteProduct = async (productId: string, productName: string) => {
+    console.log('Delete product clicked:', productId, productName);
+    if (!confirm(`Are you sure you want to delete "${productName}"? This action cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      setDeletingProductId(productId);
+      
+      // Delete from Firestore
+      await deleteDoc(doc(db, 'items', productId));
+      
+      alert('Product deleted successfully!');
+      
+      // Refresh products list
+      fetchProducts(currentPage, true);
+    } catch (error) {
+      console.error('Error deleting product:', error);
+      alert('Failed to delete product. Please try again.');
+    } finally {
+      setDeletingProductId(null);
+    }
+  };
+
+  // Handle Toggle Product Status
+  const handleToggleStatus = async (product: Product) => {
+    const newStatus = product.status === 'active' ? 'inactive' : 'active';
+    
+    try {
+      // Update status in Firestore
+      await updateDoc(doc(db, 'items', product.id), {
+        status: newStatus,
+        updatedAt: serverTimestamp()
+      });
+
+      // Update local state
+      setProducts(prevProducts =>
+        prevProducts.map(p =>
+          p.id === product.id ? { ...p, status: newStatus } : p
+        )
+      );
+
+      alert(`Product status changed to ${newStatus}`);
+    } catch (error) {
+      console.error('Error updating product status:', error);
+      alert('Failed to update product status. Please try again.');
     }
   };
 
@@ -1436,25 +1802,51 @@ export default function AdminDashboard() {
 
                           {/* Status */}
                           <td className="px-6 py-4">
-                            <span
-                              className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                handleToggleStatus(product);
+                              }}
+                              className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium cursor-pointer transition-all hover:shadow-md ${
                                 product.status === 'active'
-                                  ? 'bg-black text-white'
-                                  : 'bg-gray-200 text-gray-700'
+                                  ? 'bg-black text-white hover:bg-gray-800'
+                                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                               }`}
+                              title={`Click to change to ${product.status === 'active' ? 'inactive' : 'active'}`}
                             >
                               {product.status}
-                            </span>
+                            </button>
                           </td>
 
                           {/* Actions */}
                           <td className="px-6 py-4">
                             <div className="flex items-center gap-2">
-                              <button className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
+                              <button 
+                                type="button"
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  handleEditProduct(product);
+                                }}
+                                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                                title="Edit product"
+                              >
                                 <Edit2 className="w-4 h-4 text-gray-600" />
                               </button>
-                              <button className="p-2 hover:bg-red-50 rounded-lg transition-colors">
-                                <Trash2 className="w-4 h-4 text-red-600" />
+                              <button 
+                                type="button"
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  handleDeleteProduct(product.id, product.name);
+                                }}
+                                disabled={deletingProductId === product.id}
+                                className="p-2 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50"
+                                title="Delete product"
+                              >
+                                <Trash2 className={`w-4 h-4 ${deletingProductId === product.id ? 'text-red-300' : 'text-red-600'}`} />
                               </button>
                             </div>
                           </td>
@@ -1756,6 +2148,17 @@ export default function AdminDashboard() {
         isOpen={showAddProductModal}
         onClose={handleCloseModal}
         onSave={handleSubmitProduct}
+      />
+
+      {/* Edit Product Modal */}
+      <EditProductModal 
+        isOpen={showEditProductModal}
+        onClose={() => {
+          setShowEditProductModal(false);
+          setEditingProduct(null);
+        }}
+        onSave={handleUpdateProduct}
+        product={editingProduct}
       />
     </div>
   );
