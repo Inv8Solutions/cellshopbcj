@@ -469,39 +469,10 @@ export default function AdminDashboard() {
     return () => unsubscribe();
   }, [router]);
 
-  // Logout handler
-  const handleLogout = async () => {
-    try {
-      await auth.signOut();
-      localStorage.removeItem('isAdmin');
-      localStorage.removeItem('adminUid');
-      router.push('/admin/login');
-    } catch (error) {
-      console.error('Error logging out:', error);
-    }
-  };
-
-  // Show loading while checking authentication
-  if (isCheckingAuth) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-center">
-          <div className="w-16 h-16 border-4 border-gray-300 border-t-black rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-gray-600">Verifying access...</p>
-        </div>
-      </div>
-    );
-  }
-
-  // Don't render admin panel if not authenticated
-  if (!isAuthenticated) {
-    return null;
-  }
-
-  // Orders state and fetching logic
-
   // Fetch orders when orders tab is active
   useEffect(() => {
+    if (!isAuthenticated) return;
+    
     const fetchOrders = async () => {
       if (activeTab !== 'orders') return;
       
@@ -549,15 +520,19 @@ export default function AdminDashboard() {
         
         setOrders(ordersData);
       } catch (error) {
-        } finally {
+        console.error('Error fetching orders:', error);
+      } finally {
         setLoadingOrders(false);
       }
     };
     
     fetchOrders();
-  }, [activeTab]);
+  }, [activeTab, isAuthenticated]);
 
+  // ALL HOOKS MUST BE CALLED BEFORE CONDITIONAL RETURNS
+  // Fetch products callback
   const fetchProducts = useCallback(async (page: number, isInitialLoad = false) => {
+    if (!isAuthenticated) return;
     // Skip if we're already loading or if we're not on the products tab
     if ((productsLoading && !isInitialLoad) || activeTab !== 'products') return;
     
@@ -602,28 +577,22 @@ export default function AdminDashboard() {
         setCurrentPage(page);
       }
     } catch (error) {
-      } finally {
+      console.error('Error fetching products:', error);
+    } finally {
       setProductsLoading(false);
     }
-  }, [activeTab, currentPage, lastVisible, firstVisible, productsLoading, productsPerPage]);
+  }, [activeTab, currentPage, lastVisible, firstVisible, productsLoading, productsPerPage, isAuthenticated]);
 
   // Fetch products when the products tab becomes active
   useEffect(() => {
-    if (activeTab === 'products' && products.length === 0) {
+    if (isAuthenticated && activeTab === 'products' && products.length === 0) {
       fetchProducts(1, true);
     }
-  }, [activeTab, fetchProducts, products.length]);
+  }, [activeTab, fetchProducts, products.length, isAuthenticated]);
 
-  const admin = {
-    name: 'BJMP Administrator',
-    role: 'Admin'
-  };
-
-  const handleTabClick = (tab: 'dashboard' | 'products' | 'orders' | 'settings') => {
-    setActiveTab(tab);
-  };
-
+  // Handle mark as shipped
   const handleMarkAsShipped = useCallback(async (orderId: string) => {
+    if (!isAuthenticated) return;
     try {
       setIsMarkingAsShipped(prev => ({ ...prev, [orderId]: true }));
       // Update order status in Firestore
@@ -646,12 +615,15 @@ export default function AdminDashboard() {
         )
       );
     } catch (error) {
-      } finally {
+      console.error('Error marking as shipped:', error);
+    } finally {
       setIsMarkingAsShipped(prev => ({ ...prev, [orderId]: false }));
     }
-  }, []);
+  }, [isAuthenticated]);
 
+  // Handle mark as arrived
   const handleMarkAsArrived = useCallback(async (orderId: string) => {
+    if (!isAuthenticated) return;
     try {
       setIsMarkingAsArrived(prev => ({ ...prev, [orderId]: true }));
       // Update order status in Firestore
@@ -674,31 +646,35 @@ export default function AdminDashboard() {
         )
       );
     } catch (error) {
-      } finally {
+      console.error('Error marking as arrived:', error);
+    } finally {
       setIsMarkingAsArrived(prev => ({ ...prev, [orderId]: false }));
     }
-  }, []);
+  }, [isAuthenticated]);
 
   // Analytics chart state
-  interface ChartDataPoint {
-    month: string;
-    value: number;
-    amount?: string;
-    count?: number;
-  }
-
-  interface ChartDataState {
-    labels: string[];
-    values: number[];
-    amounts: string[];
-  }
-
-  const [revenueChartData, setRevenueChartData] = useState<ChartDataState>({ labels: [], values: [], amounts: [] });
-  const [ordersChartData, setOrdersChartData] = useState<ChartDataState>({ labels: [], values: [], amounts: [] });
+  const [revenueChartData, setRevenueChartData] = useState<{ labels: string[]; values: number[]; amounts: string[] }>({ 
+    labels: [], 
+    values: [], 
+    amounts: [] 
+  });
+  const [ordersChartData, setOrdersChartData] = useState<{ labels: string[]; values: number[]; amounts: string[] }>({ 
+    labels: [], 
+    values: [], 
+    amounts: [] 
+  });
   const [analyticsLoading, setAnalyticsLoading] = useState(true);
+  const [categoryDataState, setCategoryDataState] = useState([
+    { name: 'Home & Kitchen', percentage: 48, color: 'bg-gray-900' },
+    { name: 'Office Supplies', percentage: 30, color: 'bg-gray-600' },
+    { name: 'Accessories', percentage: 16, color: 'bg-gray-400' },
+    { name: 'Home Decor', percentage: 6, color: 'bg-gray-300' }
+  ]);
 
   // Fetch revenue data from orders
   useEffect(() => {
+    if (!isAuthenticated) return;
+    
     const fetchRevenueData = async () => {
       try {
         setAnalyticsLoading(true);
@@ -723,8 +699,8 @@ export default function AdminDashboard() {
         const ordersSnapshot = await getDocs(ordersRef);
         
         // Process each order
-        for (const doc of ordersSnapshot.docs) {
-          const order = doc.data();
+        for (const docSnap of ordersSnapshot.docs) {
+          const order = docSnap.data();
           if (order.createdAt && order.items && Array.isArray(order.items)) {
             const orderDate = order.createdAt.toDate();
             const monthKey = `${orderDate.getFullYear()}-${String(orderDate.getMonth() + 1).padStart(2, '0')}`;
@@ -767,25 +743,19 @@ export default function AdminDashboard() {
           amounts: orderValues.map(val => `${val} orders`)
         });
       } catch (error) {
-        } finally {
+        console.error('Error fetching revenue data:', error);
+      } finally {
         setAnalyticsLoading(false);
       }
     };
 
     fetchRevenueData();
-  }, []);
+  }, [isAuthenticated]);
 
-  // Sales by category (pie/donut) - default fallback preserved
-  const [categoryDataState, setCategoryDataState] = useState(
-    [
-      { name: 'Home & Kitchen', percentage: 48, color: 'bg-gray-900' },
-      { name: 'Office Supplies', percentage: 30, color: 'bg-gray-600' },
-      { name: 'Accessories', percentage: 16, color: 'bg-gray-400' },
-      { name: 'Home Decor', percentage: 6, color: 'bg-gray-300' }
-    ]
-  );
-
+  // Fetch analytics for top products
   useEffect(() => {
+    if (!isAuthenticated) return;
+    
     let mounted = true;
     const fetchAnalytics = async () => {
       try {
@@ -826,48 +796,57 @@ export default function AdminDashboard() {
             ordersByMonth[m] = (ordersByMonth[m] || 0) + 1;
           });
         } catch (err) {
-          }
-
-        // Build arrays in month order
-        const revenueArr = labels.map((lab, i) => ({ month: lab, value: Math.round(revenueByMonth[i] || 0) }));
-        const ordersArr = labels.map((lab, i) => ({ month: lab, value: ordersByMonth[i] || 0 }));
-
-        // Fetch items to compute sales by category if possible
-        try {
-          const itemsSnap = await getDocs(collection(db, 'items'));
-          const categoryTotals: Record<string, number> = {};
-          let totalSold = 0;
-          itemsSnap.forEach((d) => {
-            const data = d.data() as any;
-            const category = data.category ?? data.type ?? 'Uncategorized';
-            const sold = typeof data.sold === 'number' ? data.sold : (Number(data.sold) || Number(data.sales) || 0);
-            if (!categoryTotals[category]) categoryTotals[category] = 0;
-            categoryTotals[category] += sold;
-            totalSold += sold;
-          });
-
-          if (Object.keys(categoryTotals).length > 0) {
-            const colors = ['bg-gray-900','bg-gray-600','bg-gray-400','bg-gray-300','bg-slate-400','bg-amber-400'];
-            const catArr = Object.entries(categoryTotals).map(([name, val], idx) => ({
-              name,
-              percentage: totalSold > 0 ? Math.round((val / totalSold) * 100) : 0,
-              color: colors[idx % colors.length]
-            }));
-            if (mounted) setCategoryDataState(catArr);
-          }
-        } catch (err) {
-          }
-
-        // Data is now handled by the separate chart data states
-      } catch (err) {
-        } finally {
-        if (mounted) setAnalyticsLoading(false);
+          console.error('Error fetching orders for analytics:', err);
+        }
+      } catch (error) {
+        console.error('Error in analytics fetch:', error);
       }
     };
 
-    fetchAnalytics();
+    if (mounted) {
+      fetchAnalytics();
+    }
+    
     return () => { mounted = false; };
-  }, []);
+  }, [isAuthenticated]);
+
+  // Logout handler
+  const handleLogout = async () => {
+    try {
+      await auth.signOut();
+      localStorage.removeItem('isAdmin');
+      localStorage.removeItem('adminUid');
+      router.push('/admin/login');
+    } catch (error) {
+      console.error('Error logging out:', error);
+    }
+  };
+
+  // Show loading while checking authentication
+  if (isCheckingAuth) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <div className="w-16 h-16 border-4 border-gray-300 border-t-black rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-gray-600">Verifying access...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Don't render admin panel if not authenticated
+  if (!isAuthenticated) {
+    return null;
+  }
+
+  const admin = {
+    name: 'BJMP Administrator',
+    role: 'Admin'
+  };
+
+  const handleTabClick = (tab: 'dashboard' | 'products' | 'orders' | 'settings') => {
+    setActiveTab(tab);
+  };
 
   // Handle Add Product functionality
   const handleAddProduct = () => {
