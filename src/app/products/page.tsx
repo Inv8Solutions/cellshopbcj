@@ -94,10 +94,15 @@ export default function ProductsPage() {
           where('status', '==', 'active')
         );
         const querySnapshot = await getDocs(q);
-        const productsData = querySnapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        } as Product));
+        const productsData = querySnapshot.docs.map(doc => {
+          const data = doc.data();
+          return {
+            id: doc.id,
+            ...data,
+            price: typeof data.price === 'string' ? parseFloat(data.price) : Number(data.price),
+            createdAt: data.createdAt || null
+          } as Product;
+        });
         setProducts(productsData);
         setFilteredProducts(productsData);
       } catch (error) {

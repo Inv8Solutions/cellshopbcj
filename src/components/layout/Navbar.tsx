@@ -158,7 +158,7 @@ export default function Navbar() {
                   {searchResults.map((item) => (
                     <Link
                       key={item.id}
-                      href={`/product/${item.id}`}
+                      href={`/products/${item.id}`}
                       className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
                       onClick={() => {
                         setSearchQuery('');
