@@ -44,7 +44,12 @@ Enter:
 Click "Create Admin User"
 
 ### Step 2: Login
-Visit: `http://localhost:3000/admin/login`
+**Multiple ways to access admin login:**
+
+1. **Keyboard Shortcut** (Fastest): Press `Ctrl + Shift + A` (or `Cmd + Shift + A` on Mac)
+2. **Footer Clicks** (Hidden): Click the copyright text in footer 5 times rapidly
+3. **Secret URL**: Visit `http://localhost:3000/bjmp-admin-portal`
+4. **Direct URL**: Visit `http://localhost:3000/admin/login`
 
 Use the credentials you just created to login.
 
@@ -55,6 +60,39 @@ src/app/setup-admin/page.tsx
 ```
 
 This is a security measure to prevent unauthorized admin creation.
+
+---
+
+## 🔐 Hidden Access Methods
+
+The admin login is intentionally hidden from public view. Here are the ways to access it:
+
+### Method 1: Keyboard Shortcut ⌨️
+**Press:** `Ctrl + Shift + A` (Windows/Linux) or `Cmd + Shift + A` (Mac)
+- Works on any page
+- Instant access
+- **Recommended for daily use**
+
+### Method 2: Secret Footer Click 👆
+**Click:** The copyright text in the footer **5 times** rapidly (within 2 seconds)
+- Look for: "© 2025 Bureau of Jail Management and Penology..."
+- Hover to see remaining clicks
+- Fun and discreet
+
+### Method 3: Secret URL 🔗
+**Visit:** `/bjmp-admin-portal`
+- Full URL: `http://localhost:3000/bjmp-admin-portal`
+- Redirects to admin login
+- Easy to bookmark and share
+
+### Method 4: Direct URL 🎯
+**Visit:** `/admin/login`
+- Full URL: `http://localhost:3000/admin/login`
+- Direct access if you know the URL
+
+**See full details:** Check `ADMIN_HIDDEN_ACCESS.md` for complete documentation
+
+---
 
 ## How It Works
 
