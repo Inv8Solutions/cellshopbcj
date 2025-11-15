@@ -60,14 +60,15 @@ export default function ProductsPage() {
   const { currentUser } = useAuth();
   
   const [priceRange, setPriceRange] = useState<[number, number]>([0, 100000]);
-  const [selectedCategory, setSelectedCategory] = useState<string>('');
-  const [selectedFacility, setSelectedFacility] = useState<string>('');
+  const [selectedCategory, setSelectedCategory] = useState<string>('All');
+  const [selectedFacility, setSelectedFacility] = useState<string>('All');
   const [sortBy, setSortBy] = useState<'featured' | 'price-low' | 'price-high' | 'newest'>('featured');
   const [loading, setLoading] = useState(true);
   const [products, setProducts] = useState<Product[]>([]);
   const [filteredProducts, setFilteredProducts] = useState<Product[]>([]);
 
   const categories = [
+    'All',
     'Bags & Purses',
     'Rugs',
     'Paper Crafts',
@@ -76,6 +77,7 @@ export default function ProductsPage() {
   ];
 
   const facilities = [
+    'All',
     'Baguio City Jail',
     'La Trinidad Municipal Jail',
     'Benguet Provincial Jail',
@@ -122,12 +124,12 @@ export default function ProductsPage() {
     let filtered = [...products];
 
     // Filter by category
-    if (selectedCategory) {
+    if (selectedCategory && selectedCategory !== 'All') {
       filtered = filtered.filter(product => product.category === selectedCategory);
     }
 
     // Filter by facility
-    if (selectedFacility) {
+    if (selectedFacility && selectedFacility !== 'All') {
       filtered = filtered.filter(product => product.facility === selectedFacility);
     }
 
@@ -201,6 +203,18 @@ export default function ProductsPage() {
           <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
             {/* Sidebar Filters */}
             <aside className="lg:col-span-1 space-y-8">
+              {/* Reset All Filters Button */}
+              <button
+                onClick={() => {
+                  setPriceRange([0, 100000]);
+                  setSelectedCategory('All');
+                  setSelectedFacility('All');
+                }}
+                className="w-full bg-black text-white py-2 px-4 rounded-lg hover:bg-gray-800 transition-colors text-sm font-medium"
+              >
+                Reset All Filters
+              </button>
+
               {/* Price Range */}
               <div>
                 <div className="flex items-center justify-between mb-4">
